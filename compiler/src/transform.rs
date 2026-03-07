@@ -283,20 +283,7 @@ impl AADLTransformer {
         let inner = pair.into_inner().next().unwrap();
         match inner.as_rule() {
             aadlight_parser::Rule::component_type => {
-                // AadlDeclaration::ComponentType(self.transform_component_type(inner))
-                let component_def = self.transform_component_type(inner);
-                let component_type = match component_def {
-                    ComponentDef::Type(ct) => ct,
-                    ComponentDef::Extension(ext) => ComponentType {
-                        category: ext.category,
-                        identifier: ext.identifier,
-                        prototypes: ext.prototypes,
-                        features: ext.features,
-                        properties: ext.properties,
-                        annexes: ext.annexes,
-                    },
-                };
-                AadlDeclaration::ComponentType(component_type)
+                AadlDeclaration::ComponentType(self.transform_component_type(inner))
             }
             aadlight_parser::Rule::component_implementation => {
                 AadlDeclaration::ComponentImplementation(Self::transform_component_implementation(inner))
@@ -308,17 +295,7 @@ impl AADLTransformer {
         }
     }
     
-    // 提取限定标识符（从pest的qualified_identifier节点转换）
-    pub fn extract_qualified_identifier(pair: Pair<aadlight_parser::Rule>) -> QualifiedIdentifier {
-        // `qualified_identifier` 的Pest规则是 `(identifier ~ "::")* ~ identifier`
-        let parts: Vec<String> = pair.into_inner()
-            .filter(|inner_pair| inner_pair.as_rule() == aadlight_parser::Rule::identifier)
-            .map(|id_pair| id_pair.as_str().to_string())
-            .collect();
-        QualifiedIdentifier { parts }
-    }
-    
-    pub fn transform_component_type(&mut self, pair: Pair<aadlight_parser::Rule>) -> ComponentDef {
+    pub fn transform_component_type(&mut self, pair: Pair<aadlight_parser::Rule>) -> ComponentType {
         let mut inner_iter = pair.into_inner();
         
         let category = match inner_iter.next().unwrap().as_str() {
@@ -339,9 +316,7 @@ impl AADLTransformer {
         let mut features = FeatureClause::None;
         let mut properties = PropertyClause::ExplicitNone;
         let mut annexes = Vec::new();
-        let mut extends: Option<UniqueComponentReference> = None;
-        let mut prototype_bindings: Option<PrototypeBindings> = None;
-
+        
         for inner in inner_iter {
             match inner.as_rule() {
                 aadlight_parser::Rule::prototypes => {
@@ -359,55 +334,20 @@ impl AADLTransformer {
                     }
                 }
                 aadlight_parser::Rule::extends => {
-                    //TODO: 处理extends（已解决）
+                    //TODO: 处理extends
                     //println!("extends: {:?}", inner.as_str());
-                    let qual_id_pair = inner.into_inner().next().expect("extends必须指定组件类型引用");
-                    let qual_id = Self::extract_qualified_identifier(qual_id_pair);
-                    extends = Some(UniqueComponentReference {
-                        package_prefix: None, // 或根据 qual_id 拆分出包前缀
-                        identifier: qual_id.parts.join("::"),  // 将 qual_id 赋值给 identifier 字段
-                    });
                 }
                 _ => {}
             }
         }
         
-        // ComponentType {
-        //     category,
-        //     identifier,
-        //     prototypes,
-        //     features,
-        //     properties,
-        //     annexes,
-        // }
-
-        // 根据是否存在extends，返回不同的组件定义
-        if let Some(extends) = extends {
-            // 存在extends → 返回扩展组件类型
-            ComponentDef::Extension(ComponentTypeExtension {
-                category,
-                identifier,
-                extends,
-                prototype_bindings,
-                prototypes,
-                features,
-                // pub flows: FlowClause,
-                // pub modes: Option<ModesClause>,
-                properties,
-                annexes,
-            })
-        } else {
-            // 不存在extends → 返回普通组件类型
-            ComponentDef::Type(ComponentType {
-                category,
-                identifier,
-                prototypes,
-                features,
-                // pub flows: FlowClause,
-                // pub modes: Option<ModesClause>,
-                properties,
-                annexes,
-            })
+        ComponentType {
+            category,
+            identifier,
+            prototypes,
+            features,
+            properties,
+            annexes,
         }
     }
     
@@ -449,146 +389,27 @@ impl AADLTransformer {
                     s => panic!("Unknown component prototype category: {}", s),
                 };
                 
-                // 处理 classifier 和 is_array
-                let mut classifier: Option<UniqueComponentClassifierReference> = None;
-                let mut is_array = false;
-
-                // 遍历剩余节点，匹配classifier和[]
-                while let Some(node) = inner_iter.next() {
-                    match node.as_str() {
-                        "classifier" => {
-                            // 提取classifier对应的qualified_identifier
-                            let qual_id = Self::extract_qualified_identifier(inner_iter.next().unwrap());
-                            let impl_ref = Self::qualified_id_to_impl_ref(qual_id);
-                            classifier = Some(UniqueComponentClassifierReference::Type(impl_ref));
-                        }
-                        "[" => {
-                            // 匹配数组语法[]，标记is_array为true
-                            is_array = true;
-                        }
-                        _ => {}
-                    }
-                }
-
                 Prototype::Component(ComponentPrototype {
                     category,
-                    // classifier: None, // TODO: Handle classifier（已解决）
-                    // is_array: false,  // TODO: Handle array spec（已解决）
-                    classifier,
-                    is_array,
+                    classifier: None, // TODO: Handle classifier
+                    is_array: false,  // TODO: Handle array spec
                 })
             }
-            
             "feature" => {
-                // 处理 direction 和 classifier
-                let mut direction: Option<PortDirection> = None;
-                let mut classifier: Option<UniqueComponentClassifierReference> = None;
-
-                // 遍历剩余节点，匹配direction和classifier
-                while let Some(node) = inner_iter.next() {
-                    match node.as_str() {
-                        // 匹配方向关键字
-                        "in" => direction = Some(PortDirection::In),
-                        "out" => direction = Some(PortDirection::Out),
-                        "in out" => direction = Some(PortDirection::InOut),
-                        // 匹配classifier
-                        "classifier" => {
-                            let qual_id = Self::extract_qualified_identifier(inner_iter.next().unwrap());
-                            let impl_ref = Self::qualified_id_to_impl_ref(qual_id);
-                            classifier = Some(UniqueComponentClassifierReference::Type(impl_ref));
-                        }
-                        _ => {}
-                    }
-                }
-
                 Prototype::Feature(FeaturePrototype {
-                    // direction: None, // TODO: Handle direction（已解决）
-                    // classifier: None, // TODO: Handle classifier（已解决）
-                    direction,
-                    classifier,
+                    direction: None, // TODO: Handle direction
+                    classifier: None, // TODO: Handle classifier
                 })
             }
             "feature group" => {
-                // 处理 classifier
-                let mut classifier: Option<UniqueFeatureGroupTypeReference> = None;
-
-                // 遍历剩余节点，匹配classifier
-                while let Some(node) = inner_iter.next() {
-                    if node.as_str() == "classifier" {
-                        let qual_id = Self::extract_qualified_identifier(inner_iter.next().unwrap());
-                        classifier = Some(Self::qualified_id_to_feature_group_ref(qual_id));
-                    }
-                }
-
                 Prototype::FeatureGroup(FeatureGroupPrototype {
-                    // classifier: None, // TODO: Handle classifier（已解决）
-                    classifier,
+                    classifier: None, // TODO: Handle classifier
                 })
             }
             _ => panic!("Unknown prototype type"),
         }
     }
     
-    // ========== 新增辅助函数：QualifiedIdentifier 转 UniqueImplementationReference ==========
-    fn qualified_id_to_impl_ref(qual_id: QualifiedIdentifier) -> UniqueImplementationReference {
-        // 处理空 parts 情况
-        if qual_id.parts.is_empty() {
-            return UniqueImplementationReference {
-                package_prefix: None,
-                implementation_name: ImplementationName {
-                    type_identifier: "unknown_type".to_string(),
-                    implementation_identifier: "unknown_impl".to_string(),
-                },
-            };
-        }
-
-        // 拆分逻辑（适配 AADL 语法：package::type.impl → 包前缀=package，类型=type，实现=impl）
-        let (package_prefix, type_id, impl_id) = if qual_id.parts.len() >= 3 {
-            // 格式：pkg::type::impl → 包前缀=pkg，类型=type，实现=impl
-            let pkg_parts = qual_id.parts[0..qual_id.parts.len()-2].to_vec();
-            let type_identifier = qual_id.parts[qual_id.parts.len()-2].clone();
-            let implementation_identifier = qual_id.parts.last().unwrap().clone();
-            (Some(PackageName(pkg_parts)), type_identifier, implementation_identifier)
-        } else if qual_id.parts.len() == 2 {
-            // 格式：type::impl → 无包前缀，类型=type，实现=impl
-            (None, qual_id.parts[0].clone(), qual_id.parts[1].clone())
-        } else {
-            // 格式：type → 无包前缀，类型=type，实现=默认值（比如 "impl"）
-            (None, qual_id.parts[0].clone(), "impl".to_string())
-        };
-
-        UniqueImplementationReference {
-            package_prefix,
-            implementation_name: ImplementationName {
-                type_identifier: type_id,
-                implementation_identifier: impl_id,
-            },
-        }
-    }
-
-    // ========== 新增辅助函数：QualifiedIdentifier 转 UniqueFeatureGroupTypeReference ==========
-    fn qualified_id_to_feature_group_ref(qual_id: QualifiedIdentifier) -> UniqueFeatureGroupTypeReference {
-        if qual_id.parts.is_empty() {
-            return UniqueFeatureGroupTypeReference {
-                package_prefix: None,
-                identifier: "unknown".to_string(),
-            };
-        }
-
-        let (package_prefix, identifier) = if qual_id.parts.len() > 1 {
-            let pkg_parts = qual_id.parts[0..qual_id.parts.len()-1].to_vec();
-            let id = qual_id.parts.last().unwrap().clone();
-            (Some(PackageName(pkg_parts)), id)
-        } else {
-            (None, qual_id.parts[0].clone())
-        };
-
-        UniqueFeatureGroupTypeReference {
-            package_prefix,
-            identifier,
-        }
-    }
-
     pub fn transform_features_clause(&mut self, pair: Pair<aadlight_parser::Rule>) -> FeatureClause {
         if pair.as_str().contains("none") {
             return FeatureClause::Empty;
@@ -827,7 +648,7 @@ impl AADLTransformer {
                 name: identifier,
             },
             operator,
-            is_constant, // TODO: Handle constant（已正确处理）
+            is_constant, // TODO: Handle constant
             value,
         })
     }
@@ -1184,39 +1005,6 @@ impl AADLTransformer {
         }
     }
     
-    fn transform_array_spec(pair: Pair<aadlight_parser::Rule>) -> ArraySpec {
-        let mut dimensions = Vec::new();
-        
-        for inner in pair.into_inner() {
-            if inner.as_rule() == aadlight_parser::Rule::dimension {
-                let mut dim_inner = inner.into_inner();
-                
-                // 尝试获取 number
-                let size = if let Some(number_pair) = dim_inner.next() {
-                    // number_pair 对应 number 规则
-                    // 因为 AST 中是用 u32 存储 Fixed 大小，需要转换
-                    // 处理可能存在的 "+10" 情况
-                    let val_str = number_pair.as_str().trim().replace("+", "");
-                    
-                    // 这里假设数组维度必然是整数，如果解析失败默认为 1 或者 panic
-                    let val: u32 = val_str.parse().expect("Array dimension must be a valid u32");
-                    
-                    Some(ArrayDimensionSize::Fixed(val))
-                } else {
-                    // 空维度 []
-                    None
-                };
-                
-                dimensions.push(ArrayDimension { size });
-            }
-        }
-
-        ArraySpec {
-            dimensions,
-            element_implementations: None,
-        }
-    }
-
     pub fn transform_subcomponent(pair: Pair<aadlight_parser::Rule>) -> Subcomponent {
         let mut inner_iter = pair.into_inner();
         let identifier = extract_identifier(inner_iter.next().unwrap());
@@ -1254,41 +1042,12 @@ impl AADLTransformer {
             }),
         );
         
-        // 初始化
-        let mut array_spec = None;
-        let mut properties = Vec::new();
-
-        // 遍历剩余的 token
-        for part in inner_iter {
-            match part.as_rule() {
-                aadlight_parser::Rule::array_spec => {
-                    // 调用上面新写的辅助函数
-                    array_spec = Some(Self::transform_array_spec(part));
-                },
-                aadlight_parser::Rule::properties => {
-                    // 语法规则: properties = { "properties" ~ (property_association+) }
-                    // 所以我们需要进入 properties 规则内部，找到所有的 property_association
-                    for prop_inner in part.into_inner() {
-                        if prop_inner.as_rule() == aadlight_parser::Rule::property_association {
-                            // 复用现有的 transform_property_association 函数
-                            properties.push(Self::transform_property_association(prop_inner));
-                        }
-                    }
-                },
-                _ => {
-                    // 忽略分号或其他不相关的 token
-                }
-            }
-        }
-
         Subcomponent {
             identifier,
             category,
             classifier,
-            // array_spec: None, // TODO: Handle array spec（已解决）
-            // properties: Vec::new(), // TODO: Handle properties（已解决）
-            array_spec,
-            properties,
+            array_spec: None, // TODO: Handle array spec
+            properties: Vec::new(), // TODO: Handle properties
         }
     }
     
@@ -1312,17 +1071,6 @@ impl AADLTransformer {
         }
     }
     
-    fn transform_in_modes(pair: Pair<aadlight_parser::Rule>) -> Vec<String> {
-        let mut modes = Vec::new();
-        // 遍历内部，提取所有 identifier
-        for inner in pair.into_inner() {
-            if inner.as_rule() == aadlight_parser::Rule::identifier {
-                modes.push(extract_identifier(inner));
-            }
-        }
-        modes
-    }
-
     pub fn transform_call_sequence(pair: Pair<aadlight_parser::Rule>) -> CallSequence {
         // println!("=== 调试 calls_sequence ===");
         // println!("pair = Rule::{:?}------text = {}", pair.as_rule(),pair.as_str());
@@ -1337,46 +1085,17 @@ impl AADLTransformer {
         //let _open_brace = inner_iter.next();
         
         let mut calls = Vec::new();
-        let mut properties = Vec::new();
-        let mut in_modes = None;
-    
-        // for inner in inner_iter {
-        //     if inner.as_rule() == aadlight_parser::Rule::subprogram_call {
-        //         calls.push(Self::transform_subprogram_call(inner));
-        //     }
-        // }
-        
-        for part in inner_iter {
-            match part.as_rule() {
-                aadlight_parser::Rule::subprogram_call => {
-                    // 处理子程序调用
-                    calls.push(Self::transform_subprogram_call(part));
-                },
-                aadlight_parser::Rule::properties => {
-                    // 处理属性集
-                    for prop_inner in part.into_inner() {
-                        if prop_inner.as_rule() == aadlight_parser::Rule::property_association {
-                            properties.push(Self::transform_property_association(prop_inner));
-                        }
-                    }
-                },
-                aadlight_parser::Rule::in_modes => {
-                    // 处理模式约束
-                    in_modes = Some(Self::transform_in_modes(part));
-                },
-                _ => {
-                    // 忽略冒号、分号或其他无关 token
-                }
+        for inner in inner_iter {
+            if inner.as_rule() == aadlight_parser::Rule::subprogram_call {
+                calls.push(Self::transform_subprogram_call(inner));
             }
         }
-
+        
         CallSequence {
             identifier,
             calls,
-            // properties: Vec::new(), // TODO: Handle properties（已解决）
-            // in_modes: None, // TODO: Handle modes（已解决）
-            properties,
-            in_modes,
+            properties: Vec::new(), // TODO: Handle properties
+            in_modes: None, // TODO: Handle modes
         }
     }
     
@@ -1393,13 +1112,6 @@ impl AADLTransformer {
         //let _colon = inner_iter.next();
         //let _subprogram = inner_iter.next();
         
-        let classifier_pair = inner_iter.next().unwrap();
-        let type_name = if classifier_pair.as_str().contains("::") {
-            classifier_pair.as_str().split("::").last().unwrap().trim().to_string()
-        } else {
-            extract_identifier(classifier_pair)
-        };
-
         let called = CalledSubprogram::Classifier(
             UniqueComponentClassifierReference::Implementation(UniqueImplementationReference {
                 package_prefix: None,
@@ -1410,21 +1122,10 @@ impl AADLTransformer {
             }),
         );
         
-        // 3. 处理属性
-        let mut properties = Vec::new();
-
-        // 遍历剩余的 token
-        for part in inner_iter {
-            if part.as_rule() == aadlight_parser::Rule::property_association {
-                properties.push(Self::transform_property_association(part));
-            }
-        }
-
         SubprogramCall {
             identifier,
             called,
-            // properties: Vec::new(), // TODO: Handle properties（已解决）
-            properties,
+            properties: Vec::new(), // TODO: Handle properties
         }
     }
     
