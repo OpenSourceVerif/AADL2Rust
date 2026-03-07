@@ -67,6 +67,27 @@ pub fn print_ast(ast: &Vec<Package>) {
                                                     s.identifier, s.direction, s.classifier
                                                 );
                                             }
+                                            // 处理 SubprogramGroup 变体
+                                            SubcomponentAccessSpec::SubprogramGroup(sg) => {
+                                                println!(
+                                                    "    SubprogramGroup Access: {} {:?} {:?}",
+                                                    sg.identifier, sg.direction, sg.classifier
+                                                );
+                                            }
+                                            // 处理 Bus 变体
+                                            SubcomponentAccessSpec::Bus(b) => {
+                                                println!(
+                                                    "    Bus Access: {} {:?} {:?} {:?}",
+                                                    b.identifier, b.direction, b.bus_type, b.classifier
+                                                );
+                                            }
+                                            // 处理 VirtualBus 变体
+                                            SubcomponentAccessSpec::VirtualBus(vb) => {
+                                                println!(
+                                                    "    VirtualBus Access: {} {:?} {:?}",
+                                                    vb.identifier, vb.direction, vb.classifier
+                                                );
+                                            }
                                         }
                                     }
                                     // _ => {}

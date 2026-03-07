@@ -1,0 +1,62 @@
+√：
+aocs                        √ 补全并指定线程实现，完善空数据类型定义    -- 1
+ardupilot                   √ 修改合并c文件，移除结构体（子程序要调用结构体，但是不支持多参数的子程序，拆分成多个子程序和参数） -- 2
+arinc653_annex              √ 将嵌套系统改为一个系统，补充数据类型字段  -- 1 2
+fcs                         √ 添加数据类型（假设全为Float），用模拟线程替代device转为process组件    -- 1 2
+isr                         √ 用process代替abstract，新增processor  -- 1 2 3
+line_follower               √ 新增processor，调度协议修改：Background->Periodic
+minepump                    √ 修改c文件，新增线程实现   --2 3
+minepump_ba                 √ 将annex的实现逻辑放到c函数中，修改c函数，新增线程实现并绑定子程序 -- 2 3
+mixin                       √ 用process代替abstract，thread替代device，新增发送端口，新增processor  -- 1 2 3
+mosart                      √ 补充数据类型和数据字段，引用数据声明而不是数据实现    -- 1
+pathfinder_system           √ 移除device，新增线程代替device输入，补充数据类型  -- 1 2
+ping_spark                  √ 将Ada语言改为c，类似pingpong
+producer_consumer           √ 将Ada语言改为c，类似pingpong  -- 2
+producer_consumer_ba        √ 修改c文件，移除real_specification -- 2
+radar                       √ 将Ada语言改为c，修改子程序
+ravenscar                   √ 将Ada语言改为c，修改合并c文件，拆分多参数子程序   -- 2
+round_robin                 √ 一个system对应唯一实现
+satellite                   √ 补充数据类型和数据字段，一个线程只能有一个共享数据连接    -- 1 2
+stm32discovery_ada          √ 将Ada语言改为c
+time_triggered              √ 将Ada语言改为c，拆分子程序
+
+?:
+behavior_annex              ? 保留BA会报错
+doors                       ? 保留BA会报错
+pacemaker                   ? 保留BA会报错
+producer_consumer_ba_4ports_manyDispatchTriggers    ? annex behavior_specification解析有各种报错
+producer_consumer_ba_many_transitions               ? annex behavior_specification解析有各种报错
+producer_consumer_ba2                               ? annex behavior_specification解析有各种报错
+
+×：
+air                         ×（类似pingpong）
+asl                         ×（aadl中只有system）
+car                         ×（已有）
+data_modeling_annex         ×（同composite_types）
+flow_analysis               ×（原模型有很多子程序，但没有c代码文件）
+memory                      ×（不支持memory）
+perseus                     ×（只有device和system）
+redundancy                  ×（aadl中全是abstract）
+rma                         ×（已有）
+robot                       ×（已有）
+robot_ba                    ×（已有）
+tetris                      ×（aadl内容为空）
+units                       ×（不支持属性集，也没有子程序文件）
+voter                       ×（aadl中全是abstract）
+
+复杂：
+adiru
+ahrs_discovery
+aram
+fms
+mjpeg
+multicore
+paparazzi
+rap
+rap_code
+rosace
+uxv
+
+问题 -- 1：线程数据端口丢失
+问题 -- 2：所有线程的 run 方法中，周期都被统一生成为了 2000 ms
+问题 -- 3：run 方法中，调度协议默认为周期性轮询（和 Periodic 一样）

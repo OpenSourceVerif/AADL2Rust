@@ -1,0 +1,44 @@
+arrays ------------------------------ * 1
+                                      * 数组类型i32，应该是struct
+bit_codec --------------------------- * 1
+building_control_gen_mixed ---------- * 1
+                                      * 2
+datatype-examples ------------------- * 1
+                                      * 2
+fan_in_fan_out ---------------------- * 1
+                                      * 2
+                                      * fan-in和fan-out各自的端口被覆盖：从第一个生产者接收/发送给第一个接收者 的数据被 从二个生产者接收/发送给第二个接收者 的数据覆盖
+nested_feature_groups --------------- * 1
+                                      * 2
+periodicDispatch -------------------- * 2
+producer_filter_consumer_mixed ------ * 1
+                                      * 2
+producer_filter_consumer_periodic --- * 1
+                                      * 2
+producer_filter_consumer_sporadic --- * 1
+                                      * 2
+testdpmon --------------------------- * 2
+testdpmon-periodic ------------------ * 2
+testepmon --------------------------- * 2
+testevent --------------------------- * 1（有子程序，但端口类型是event port）
+                                      * 2
+testevent_MultQueue ----------------- * 1（有子程序，但端口类型是event port）
+                                      * 2
+testshare --------------------------- * 2
+testsubprogram ---------------------- * 2
+urgency ----------------------------- * 1
+                                      * 2
+                                      * 同fan端口覆盖
+                                      * 没有生成紧急度优先级
+wms --------------------------------- * 1
+                                      * 2
+
+
+问题 1：线程数据端口丢失
+问题 2：所有线程的 run 方法中，周期都被统一生成为了 2000 ms
+fan-in fan-out问题：如果在aadl中修改，把一对多/多对一变成一一对应
+
+PS：线程数据端口丢失，是因为线程没绑定子程序，导致端口没有数据，而由于event port是纯事件，即使绑定了子程序也没有端口数据
+    但有特殊情况：
+    arrays：missions_from_producer: in event data port，无子程序但生成有端口数据
+    bit_codec：from_producer_event: in event port，无子程序但生成有端口数据

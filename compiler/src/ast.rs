@@ -2,6 +2,12 @@
 #[allow(dead_code)]
 pub mod aadl_ast_cj {
 
+    #[derive(Debug, Clone, PartialEq)]
+    pub struct QualifiedIdentifier {
+        /// 限定标识符的各部分（比如 "pkg::comp::subcomp" 拆成 ["pkg", "comp", "subcomp"]）
+        pub parts: Vec<String>,
+    }
+    
     /* ========== 4.2 Package ========== */
     // 包名（双冒号分隔的标识符序列）
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -80,6 +86,13 @@ pub mod aadl_ast_cj {
     }
 
     /* ========== 4.3 Component Types ========== */
+    // 包裹普通组件类型和扩展组件类型
+    #[derive(Debug, Clone)]
+    pub enum ComponentDef {
+        Type(ComponentType),               // 普通组件类型（无extends）
+        Extension(ComponentTypeExtension), // 扩展组件类型（含extends）
+    }
+    
     // 组件类型定义
     #[derive(Debug, Clone)]
     pub struct ComponentType {
@@ -428,7 +441,7 @@ pub mod aadl_ast_cj {
         Broadcast(Broadcast),
     }
 
-    /// 子程序调用 TODO
+    /// 子程序调用 TODO （5.2中有了）
     /// subprogram_call ::= subprogram_prototype_name ! [ ( subprogram_parameter_list ) ] | required_subprogram_access_name ! [ ( subprogram_parameter_list ) ] | subprogram_subcomponent_name ! [ ( subprogram_parameter_list ) ] | subprogram_unique_component_classifier_reference ! [ ( subprogram_parameter_list ) ]
     // #[derive(Debug, Clone)]
     // pub struct SubprogramCall {
@@ -1310,7 +1323,7 @@ pub mod aadl_ast_cj {
         Subprogram,
     }
 
-    /* ========== TODO:属性关联 ========== */
+    /* ========== TODO:属性关联 ========== */   // （已解决）
     #[derive(Debug, Clone)]
     pub struct PrototypePropertyAssociation {
         pub name: String,
@@ -1419,7 +1432,13 @@ pub mod aadl_ast_cj {
         Data(DataAccessSpec),
         /// 子程序访问 (subprogram_access_spec)
         Subprogram(SubprogramAccessSpec),
-        // TODO: SubprogramGroup, Bus, VirtualBus
+        // TODO: SubprogramGroup, Bus, VirtualBus（已解决）
+        // 子程序组访问 (subprogram_group_access_spec)
+        SubprogramGroup(SubprogramGroupAccessSpec),
+        // 总线访问 (bus_access_spec)
+        Bus(BusAccessSpec),
+        // 虚拟总线访问 (virtual_bus_access_spec)
+        VirtualBus(VirtualBusAccessSpec),
     }
 
     /* ========== 访问特征 ========== */
@@ -1459,6 +1478,65 @@ pub mod aadl_ast_cj {
         Classifier(UniqueComponentClassifierReference),
         /// 原型标识符 (subprogram_component_prototype_identifier)
         Prototype(String),
+    }
+
+    /// 子程序组访问规范 (subprogram_group_access_spec)
+    /// 对应标准中的 `subprogram_group_access_spec`
+    #[derive(Debug, Clone)]
+    pub struct SubprogramGroupAccessSpec {
+        /// `defining_subprogram_group_access_identifier`
+        pub identifier: String,
+        pub direction: AccessDirection, // provides | requires
+        /// `subprogram_group_unique_component_classifier_reference | subprogram_group_component_prototype_identifier`
+        pub classifier: Option<SubprogramGroupAccessReference>,
+    }
+
+    /// 子程序组访问的分类器引用
+    #[derive(Debug, Clone)]
+    pub enum SubprogramGroupAccessReference {
+        /// 分类器引用 (subprogram_group_unique_component_classifier_reference)
+        Classifier(UniqueComponentClassifierReference),
+        /// 原型标识符 (subprogram_group_component_prototype_identifier)
+        Prototype(String),
+    }
+
+    /// 总线访问规范 (bus_access_spec)
+    /// 对应标准中的 `bus_access_spec`
+    #[derive(Debug, Clone)]
+    pub struct BusAccessSpec {
+        /// `defining_bus_access_identifier`
+        pub identifier: String,
+        pub direction: AccessDirection, // provides | requires
+        pub bus_type: BusType,
+        /// `bus_unique_component_classifier_reference | prototype_identifier`
+        pub classifier: Option<BusAccessReference>,
+    }
+
+    /// 总线类型枚举
+    #[derive(Debug, Clone, PartialEq)]
+    pub enum BusType {
+        Bus,         // 物理总线
+        VirtualBus,  // 虚拟总线
+    }
+
+    /// 总线访问的分类器引用
+    #[derive(Debug, Clone)]
+    pub enum BusAccessReference {
+        /// 分类器引用 (bus_unique_component_classifier_reference)
+        Classifier(UniqueComponentClassifierReference),
+        /// 原型标识符 (bus_component_prototype_identifier)
+        Prototype(String),                             
+    }
+
+    /// 虚拟总线访问规范 (virtual_bus_access_spec)
+    /// 对应标准中的 `virtual_bus_access_spec`
+    #[derive(Debug, Clone)]
+    pub struct VirtualBusAccessSpec {
+        /// `virtual_bus_access_spec`
+        pub identifier: String,
+        pub direction: AccessDirection, // provides | requires
+        /// `virtual_bus_unique_component_classifier_reference | prototype_identifier`
+        pub classifier: Option<BusAccessReference>, // 复用总线访问的分类器引用
     }
 
     /*=================9 connection ============ */

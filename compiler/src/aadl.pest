@@ -88,12 +88,21 @@ subcomponent = {
     ";"
 }
 
-// 4.7 Prototypes TODO
+// 4.7 Prototypes TODO（已解决）
 prototype_declaration = {
     identifier ~ ":" ~
     ("component" ~ component_category ~ ("classifier" ~ qualified_identifier)?) |
     ("feature" ~ ("in" | "out" | "in out")? ~ ("classifier" ~ qualified_identifier)?) |
-    ("feature group" ~ ("classifier" ~ qualified_identifier)?)
+    ("feature group" ~ ("classifier" ~ qualified_identifier)?) ~
+    // 可选：属性关联列表
+    ("[" ~ prototype_property_association ~ ("," ~ prototype_property_association)* ~ "]")? ~
+    ";"
+}
+
+prototype_property_association = {
+    identifier ~ "=>" ~ property_value ~ 
+    ("applies" ~ WHITESPACE+ ~ "to" ~ WHITESPACE+ ~ 
+     qualified_identifier ~ ("," ~ qualified_identifier)* )?
 }
 
 // 8 Features
@@ -170,12 +179,16 @@ number = { sign? ~ numbervalue} //带符号整数或浮点数
 numbervalue = {(ASCII_DIGIT+) ~ (dot ~ ASCII_DIGIT+)?}
 
 unit = { no_point_identifier } //可选的单位
-//TODO:string_literal的定义需要修改，不应该存在括号
-string_literal = { 
-    "\"" ~ (!"\"" ~ ANY)* ~ "\"" | 
-    "(" ~ ("()" | ( !")" ~ ANY ) )* ~ ")" 
-}//双引号字符串或括号内容（如 "text" 或 (POSIX_1003_HIGHEST_PRIORITY_FIRST_PROTOCOL)）
-//注意跳过("new PingPongType()") 内部的括号对
+
+//TODO:string_literal的定义需要修改，不应该存在括号（已解决）
+// string_literal = { 
+//     "\"" ~ (!"\"" ~ ANY)* ~ "\"" | 
+//     "(" ~ ("()" | ( !")" ~ ANY ) )* ~ ")" 
+// }//双引号字符串或括号内容（如 "text" 或 (POSIX_1003_HIGHEST_PRIORITY_FIRST_PROTOCOL)）
+// //注意跳过("new PingPongType()") 内部的括号对
+
+string_literal = { "\"" ~ (!"\"" ~ (ESCAPED_QUOTE | ANY))* ~ "\"" }
+ESCAPED_QUOTE = { "\\\"" }    // 支持转义引号
 
 boolean = { "true" | "false"}
 // 枚举值规则（覆盖AADL属性集预定义值）
@@ -194,12 +207,26 @@ enum_value = @{
 }
 
 // 5.2 Subprogram Calls
+// call_sequence = {
+//     identifier ~ ":" ~ "{" ~ subprogram_call+ ~ "}" ~ ";"
+// }
 call_sequence = {
-    identifier ~ ":" ~ "{" ~ subprogram_call+ ~ "}" ~ ";"
+    identifier ~ ":" ~
+    "{" ~ subprogram_call+ ~ "}" ~
+    properties? ~   // 新增：允许属性
+    in_modes? ~     // 新增：允许模式
+    ";"
 }
 
-subprogram_call = {
-    identifier ~ ":" ~ "subprogram" ~ qualified_identifier ~ ";"
+in_modes = { "in" ~ "modes" ~ "(" ~ identifier ~ ("," ~ identifier)* ~ ")" }
+
+// subprogram_call = {
+//     identifier ~ ":" ~ "subprogram" ~ qualified_identifier ~ ";"
+// }
+subprogram_call = { 
+    identifier ~ ":" ~ "subprogram" ~ qualified_identifier ~ 
+    ("{" ~ property_association+ ~ "}")? ~ 
+    ";" 
 }
 
 // Annexes
@@ -375,7 +402,7 @@ assignment_action = {
 
 
 
-// TODO行为参数绑定
+// TODO行为参数绑定（已解决）
 //behavior_parameter_bindings ::=
 // behavior_expression [ -> unique_port_identifier ]
 // { , behavior_expression [ -> unique_port_identifier ] } *
@@ -383,9 +410,17 @@ assignment_action = {
 //     "(" ~ behavior_parameter_binding ~ ("," ~ behavior_parameter_binding)* ~ ")" 
 // }
 
+behavior_parameter_bindings = { 
+    "(" ~ behavior_parameter_binding ~ ("," ~ behavior_parameter_binding)* ~ ")" 
+}
+
 // behavior_parameter_binding = { 
 //     behavior_expression ~ ("->" ~ identifier)? 
 // }
+
+behavior_parameter_binding = { 
+    behavior_expression ~ ("->" ~ identifier)? 
+}
 
 // behavior_expression 现在使用与 value_expression 相同的表达式层次结构
 // 这样可以保持一致性，避免重复定义
@@ -666,13 +701,13 @@ qualified_identifier_list = { qualified_identifier ~ ("," ~ qualified_identifier
 port_reference = { (no_point_identifier ~ ".")? ~ no_point_identifier }
 parameter_reference = { (identifier ~ ".")? ~ identifier }
 
-// 子句可选性,TODO:可能需要删去所有的“”，需要看标准确认
-prototypes = { "prototypes" ~ (prototype_declaration+ | "") }
-features = { "features" ~ (feature_declaration+ | "") }
+// 子句可选性,TODO:可能需要删去所有的“”，需要看标准确认（已解决，标准中没有引号）
+prototypes = { "prototypes" ~ (prototype_declaration+) }
+features = { "features" ~ (feature_declaration+) }
 properties = { "properties" ~ (property_association+) }
-subcomponents = { "subcomponents" ~ (subcomponent+ | "") }
-calls = { "calls" ~ (call_sequence+ | "") }
-connections = { "connections" ~ (connection+ | "") }
+subcomponents = { "subcomponents" ~ (subcomponent+) }
+calls = { "calls" ~ (call_sequence+) }
+connections = { "connections" ~ (connection+) }
 
 
 // 注意：这个规则在 main.rs 中被使用，警告是误报

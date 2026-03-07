@@ -1,0 +1,17 @@
+attestation-gate
+simple_uav
+test_data_port                              (base)testdpmon
+test_data_port_periodic                     (base)testdpmon-periodic
+test_data_port_periodic_domains             √ 新增子程序并绑定，调整c代码，注释调度域
+test_data_port_periodic_fan_out             √ 新增子程序并绑定，调整c代码
+test_data-port-periodic_domains_VM          
+test_event_data_port                        (base)testepmon
+test_event_data_port_fan_out                √ 同test_data_port_periodic_fan_out，端口：event data port，调度：Sporadic，新增队列长度
+test_event_data_port_periodic_domains       √ 同test_data_port_periodic_domains，端口：event data port
+test_event_data_port_periodic_domains_VM
+test_event_port                             (base)testevent
+test_event_port_fan_out                     √ 同test_event_data_port_fan_out，端口：event port（纯事件端口）
+test_event_port_periodic_domains            √ 同test_event_data_port_periodic_domains，端口：event port（纯事件端口）
+uav_june_step6
+vm-with-multiple-threads                    
+VPM_ben
