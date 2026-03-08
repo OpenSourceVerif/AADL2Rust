@@ -90,6 +90,12 @@ pub fn print_ast(ast: &Vec<Package>) {
                                             }
                                         }
                                     }
+                                    Feature::FeatureGroup(fg) => {
+                                        println!("    Feature Group: {} [Type: {:?}]", fg.identifier, fg.classifier);
+                                    }
+                                    Feature::Parameter(param) => {
+                                        println!("    Parameter: {} ({:?}) [Type: {:?}]", param.identifier, param.direction, param.classifier);
+                                    }
                                     // _ => {}
                                 }
                             }

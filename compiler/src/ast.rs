@@ -1374,7 +1374,7 @@ pub mod aadl_ast_cj {
 
     /*8 features and shared access */
     //功能是组件类型定义的一部分，指定接口
-    //TODO:目前只考虑port,例子在Notion中有图片
+    //TODO:目前只考虑port,例子在Notion中有图片（已解决）
     #[derive(Debug, Clone)]
     pub enum Feature {
         // 抽象特征 (abstract_feature_spec)
@@ -1385,10 +1385,10 @@ pub mod aadl_ast_cj {
         // 子组件访问 (subcomponent_access_spec)
         SubcomponentAccess(SubcomponentAccessSpec),
         // 特征组 (feature_group_spec)
-        //FeatureGroup(FeatureGroupSpec),
+        FeatureGroup(FeatureGroupSpec),
 
         // 参数 (parameter_spec)
-        //Parameter(ParameterSpec),
+        Parameter(ParameterSpec),
 
         // 精化特征 (feature_refinement)
         //Refinement(FeatureRefinement)
@@ -1537,6 +1537,28 @@ pub mod aadl_ast_cj {
         pub direction: AccessDirection, // provides | requires
         /// `virtual_bus_unique_component_classifier_reference | prototype_identifier`
         pub classifier: Option<BusAccessReference>, // 复用总线访问的分类器引用
+    }
+
+    /* ========== 参数 (parameter_spec) ========== */
+    #[derive(Debug, Clone)]
+    pub struct ParameterSpec {
+        pub identifier: String,
+        pub direction: PortDirection, // usually in, out, in out
+        pub classifier: Option<PortDataTypeReference>, // 参数通常也是引用 Data Classifier
+    }
+
+    /* ========== 特征组 (feature_group_spec) ========== */
+    #[derive(Debug, Clone)]
+    pub struct FeatureGroupSpec {
+        pub identifier: String,
+        pub direction: Option<AccessDirection>, // feature group 也可以有 inverse (requires) 或默认 (provides) 语义，或者简单存储是否是 inverse
+        pub classifier: Option<FeatureGroupReference>,
+    }
+
+    #[derive(Debug, Clone)]
+    pub enum FeatureGroupReference {
+        Classifier(UniqueComponentClassifierReference),
+        Prototype(String),
     }
 
     /*=================9 connection ============ */
@@ -1764,9 +1786,22 @@ pub mod aadl_ast_cj {
         //PropertyReference(PropertyTerm),
         ComponentClassifier(ComponentClassifierTerm),
         Reference(ReferenceTerm),
-        //Record(RecordTerm),
+        Record(RecordTerm),
         //Computed(ComputedTerm),
+        Computed(String),
         Apply(ApplyTerm), //contained_property_association（做了简化处理）
+        ReferenceConstant(PropertyConstantTerm),
+    }
+
+    #[derive(Debug, Clone)]
+    pub struct RecordTerm {
+        pub fields: Vec<RecordFieldTerm>,
+    }
+
+    #[derive(Debug, Clone)]
+    pub struct RecordFieldTerm {
+        pub name: String,
+        pub value: PropertyValue,
     }
     /* ========== 属性常量项 ========== */
     #[derive(Debug, Clone)]

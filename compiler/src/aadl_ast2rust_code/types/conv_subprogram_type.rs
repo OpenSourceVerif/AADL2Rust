@@ -187,6 +187,72 @@ fn generate_c_function_wrapper(
                         }
                     }
                 } //_ => {} // 忽略其他类型的特征
+                Feature::FeatureGroup(fg) => {
+                    if let Some(FeatureGroupReference::Classifier(ref c)) = fg.classifier {
+                        // 解析类型名称
+                        let type_name = match c {
+                            UniqueComponentClassifierReference::Type(t) => t.implementation_name.type_identifier.clone(),
+                            UniqueComponentClassifierReference::Implementation(i) => i.implementation_name.type_identifier.clone(),
+                        };
+                        
+                        // 添加到导入列表
+                        types_to_import.insert(type_name.clone());
+                    }
+                }
+
+                Feature::Parameter(param) => {
+                    // 解析参数类型
+                    let mut param_type_name = String::new();
+                    if let Some(PortDataTypeReference::Classifier(ref c)) = param.classifier {
+                        param_type_name = match c {
+                            UniqueComponentClassifierReference::Type(t) => t.implementation_name.type_identifier.clone(),
+                            UniqueComponentClassifierReference::Implementation(i) => i.implementation_name.type_identifier.clone(),
+                        };
+                    }
+
+                    // 只有非基本类型才需要导入
+                    if !param_type_name.is_empty() && !is_rust_primitive_type(&param_type_name) {
+                        types_to_import.insert(param_type_name.clone());
+                    }
+                    
+                    let rust_type = if param_type_name.is_empty() { 
+                        Type::Unit 
+                    } else { 
+                        Type::Named(param_type_name.clone()) 
+                    };
+
+                    // 假设这是一个 setter/getter 风格的接口
+                    let func_name = format!("{}_{}", 
+                        if param.direction == PortDirection::Out { "get" } else { "set" }, 
+                        param.identifier.to_lowercase()
+                    );
+
+                    functions.push(FunctionDef {
+                        name: func_name,
+                        params: vec![Param {
+                            name: "val".to_string(),
+                            ty: if param.direction == PortDirection::In { 
+                                rust_type.clone() // In 参数通常传值
+                            } else { 
+                                Type::Reference(Box::new(rust_type.clone()), true, true) // Out 参数传可变引用
+                            },
+                        }],
+                        return_type: Type::Unit,
+                        body: Block {
+                            stmts: vec![
+                                Statement::Expr(Expr::Unsafe(Box::new(Block {
+                                    stmts: vec![], 
+                                    expr: Some(Box::new(Expr::Ident(format!("/* TODO: Map parameter {} to C call arg */", param.identifier))))
+                                })))
+                            ],
+                            expr: None,
+                        },
+                        asyncness: false,
+                        vis: Visibility::Public,
+                        docs: vec![format!("// Helper for parameter: {}", param.identifier)],
+                        attrs: Vec::new(),
+                    });
+                }
             }
         }
     }

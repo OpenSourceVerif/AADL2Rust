@@ -617,15 +617,162 @@ impl AADLTransformer {
         }
     }
     
+    // pub fn transform_feature_declaration(pair: Pair<aadlight_parser::Rule>) -> Feature {
+    //     let mut inner_iter = pair.into_inner();
+
+    //     let identifier = extract_identifier(inner_iter.next().unwrap()); // p
+    //     let mut direction: Option<PortDirection> = None;
+    //     let mut port_type_str: Option<&str> = None;
+    //     let mut access_direction: Option<AccessDirection> = None;
+    //     let mut access_type_str: Option<&str> = None; // "data" | "subprogram"
+    //     let mut classifier_qname: Option<String> = None; // qualified_identifier or identifier
+
+    //     for inner in inner_iter {
+    //         match inner.as_rule() {
+    //             aadlight_parser::Rule::direction => {
+    //                 direction = match inner.as_str() {
+    //                     "in" => Some(PortDirection::In),
+    //                     "out" => Some(PortDirection::Out),
+    //                     "in out" => Some(PortDirection::InOut),
+    //                     _ => None,
+    //                 };
+    //             }
+    //             aadlight_parser::Rule::port_type => {
+    //                 port_type_str = Some(inner.as_str());
+    //             }
+    //             aadlight_parser::Rule::access_direction => {
+    //                 access_direction = match inner.as_str() {
+    //                     "provides" => Some(AccessDirection::Provides),
+    //                     "requires" => Some(AccessDirection::Requires),
+    //                     _ => None,
+    //                 };
+    //             }
+    //             aadlight_parser::Rule::access_type => {
+    //                 access_type_str = Some(inner.as_str());
+    //             }
+    //             aadlight_parser::Rule::qualified_identifier => {
+    //                 classifier_qname = Some(inner.as_str().to_string());
+    //             }
+    //             aadlight_parser::Rule::identifier => {
+    //                 // 兼容老语法中使用 identifier 作为类型名
+    //                 if classifier_qname.is_none() {
+    //                     classifier_qname = Some(inner.as_str().to_string());
+    //                 }
+    //             }
+    //             _ => {}
+    //         }
+    //     }
+
+    //     // 如果是端口类特征
+    //     if let Some(pt) = port_type_str {
+    //         let classifier = classifier_qname.clone().map(|qname| {
+    //             // 解析包前缀和类型名
+    //             let parts: Vec<&str> = qname.split("::").collect();
+    //             let (package_prefix, type_id) = if parts.len() > 1 {
+    //                 let package_name = parts[0..parts.len()-1].join("::");
+    //                 let type_name = parts.last().unwrap().split(".").next().unwrap().to_string();
+    //                 (Some(package_name), type_name)
+    //             } else {
+    //                 (None, qname.to_string())
+    //             };
+                
+    //             PortDataTypeReference::Classifier(
+    //                 UniqueComponentClassifierReference::Type(UniqueImplementationReference {
+    //                     package_prefix: package_prefix.map(|p| PackageName(p.split("::").map(|s| s.to_string()).collect())),
+    //                     implementation_name: ImplementationName {
+    //                         type_identifier: type_id,
+    //                         implementation_identifier: String::new(),
+    //                     },
+    //                 }),
+    //             )
+    //         });
+
+    //         let resolved_port_type = match pt {
+    //             "data port" | "parameter" => PortType::Data { classifier: classifier.clone() },
+    //             "event data port" => PortType::EventData { classifier: classifier.clone() },
+    //             "event port" => PortType::Event,
+    //             other => panic!("Unknown port type: {}", other),
+    //         };
+
+    //         return Feature::Port(PortSpec {
+    //             identifier,
+    //             direction: direction.unwrap_or(match resolved_port_type {
+    //                 PortType::Data { .. } | PortType::EventData { .. } => PortDirection::InOut,
+    //                 PortType::Event => PortDirection::In,
+    //             }),
+    //             port_type: resolved_port_type,
+    //         });
+    //     }
+
+    //     // 访问特征：data access / subprogram access
+    //     if let Some(at) = access_type_str {
+    //         let direction = access_direction.unwrap_or(AccessDirection::Provides);
+
+    //         // 构造分类器（若存在）
+    //         let map_classifier_to_component_classifier = || -> Option<UniqueComponentClassifierReference> {
+    //             classifier_qname.clone().map(|qname| {
+    //                 let type_id = qname.split("::").last().unwrap_or(&qname).to_string();
+                    
+    //                 // 智能判断：如果以.Impl结尾，认为是实现引用
+    //                 if type_id.ends_with("Impl") {
+    //                     UniqueComponentClassifierReference::Implementation(UniqueImplementationReference {
+    //                         package_prefix: None,
+    //                         implementation_name: ImplementationName {
+    //                             type_identifier: type_id,
+    //                             implementation_identifier: String::new(),
+    //                         },
+    //                     })
+    //                 } else {
+    //                     // 否则认为是类型引用
+    //                     UniqueComponentClassifierReference::Type(UniqueImplementationReference {
+    //                         package_prefix: None,
+    //                         implementation_name: ImplementationName {
+    //                             type_identifier: type_id,
+    //                             implementation_identifier: String::new(),
+    //                         },
+    //                     })
+    //                 }
+    //             })
+    //         };
+
+    //         match at {
+    //             "data" => {
+    //                 let classifier = map_classifier_to_component_classifier()
+    //                     .map(DataAccessReference::Classifier);
+    //                 return Feature::SubcomponentAccess(SubcomponentAccessSpec::Data(DataAccessSpec {
+    //                     identifier,
+    //                     direction,
+    //                     classifier,
+    //                 }));
+    //             }
+    //             "subprogram" => {
+    //                 let classifier = map_classifier_to_component_classifier()
+    //                     .map(SubprogramAccessReference::Classifier);
+    //                 return Feature::SubcomponentAccess(SubcomponentAccessSpec::Subprogram(
+    //                     SubprogramAccessSpec {
+    //                         identifier,
+    //                         direction,
+    //                         classifier,
+    //                     },
+    //                 ));
+    //             }
+    //             other => panic!("Unknown access type: {}", other),
+    //         }
+    //     }
+
+    //     panic!("Unsupported feature_declaration: missing port or access spec")
+    // }
     pub fn transform_feature_declaration(pair: Pair<aadlight_parser::Rule>) -> Feature {
         let mut inner_iter = pair.into_inner();
+        let identifier = extract_identifier(inner_iter.next().unwrap());
 
-        let identifier = extract_identifier(inner_iter.next().unwrap()); // p
+        // 状态变量
         let mut direction: Option<PortDirection> = None;
-        let mut port_type_str: Option<&str> = None;
+        let mut port_or_param_type_str: Option<&str> = None;
         let mut access_direction: Option<AccessDirection> = None;
-        let mut access_type_str: Option<&str> = None; // "data" | "subprogram"
-        let mut classifier_qname: Option<String> = None; // qualified_identifier or identifier
+        let mut access_type_str: String = String::new(); // 改为 String 以便拼接 "subprogram group"
+        let mut is_feature_group = false;
+        let mut classifier_qname: Option<String> = None;
 
         for inner in inner_iter {
             match inner.as_rule() {
@@ -637,8 +784,8 @@ impl AADLTransformer {
                         _ => None,
                     };
                 }
-                aadlight_parser::Rule::port_type => {
-                    port_type_str = Some(inner.as_str());
+                aadlight_parser::Rule::port_or_param_type => {
+                    port_or_param_type_str = Some(inner.as_str());
                 }
                 aadlight_parser::Rule::access_direction => {
                     access_direction = match inner.as_str() {
@@ -648,120 +795,102 @@ impl AADLTransformer {
                     };
                 }
                 aadlight_parser::Rule::access_type => {
-                    access_type_str = Some(inner.as_str());
+                    access_type_str = inner.as_str().to_string();
                 }
                 aadlight_parser::Rule::qualified_identifier => {
                     classifier_qname = Some(inner.as_str().to_string());
                 }
-                aadlight_parser::Rule::identifier => {
-                    // 兼容老语法中使用 identifier 作为类型名
-                    if classifier_qname.is_none() {
-                        classifier_qname = Some(inner.as_str().to_string());
+                _ => {
+                    if inner.as_str() == "group" { // 简单判定 feature group
+                        is_feature_group = true;
                     }
                 }
-                _ => {}
             }
         }
 
-        // 如果是端口类特征
-        if let Some(pt) = port_type_str {
-            let classifier = classifier_qname.clone().map(|qname| {
-                // 解析包前缀和类型名
-                let parts: Vec<&str> = qname.split("::").collect();
-                let (package_prefix, type_id) = if parts.len() > 1 {
-                    let package_name = parts[0..parts.len()-1].join("::");
-                    let type_name = parts.last().unwrap().split(".").next().unwrap().to_string();
-                    (Some(package_name), type_name)
-                } else {
-                    (None, qname.to_string())
-                };
-                
-                PortDataTypeReference::Classifier(
-                    UniqueComponentClassifierReference::Type(UniqueImplementationReference {
-                        package_prefix: package_prefix.map(|p| PackageName(p.split("::").map(|s| s.to_string()).collect())),
-                        implementation_name: ImplementationName {
-                            type_identifier: type_id,
-                            implementation_identifier: String::new(),
-                        },
-                    }),
-                )
-            });
+        let resolve_classifier = |qname: Option<String>| -> Option<UniqueComponentClassifierReference> {
+            qname.map(|n| UniqueComponentClassifierReference::Type(UniqueImplementationReference {
+                package_prefix: None, 
+                implementation_name: ImplementationName { type_identifier: n, implementation_identifier: "".to_string() }
+            }))
+        };
 
-            let resolved_port_type = match pt {
-                "data port" | "parameter" => PortType::Data { classifier: classifier.clone() },
-                "event data port" => PortType::EventData { classifier: classifier.clone() },
-                "event port" => PortType::Event,
-                other => panic!("Unknown port type: {}", other),
-            };
-
-            return Feature::Port(PortSpec {
+        // 处理 Feature Group
+        if is_feature_group {
+            return Feature::FeatureGroup(FeatureGroupSpec {
                 identifier,
-                direction: direction.unwrap_or(match resolved_port_type {
-                    PortType::Data { .. } | PortType::EventData { .. } => PortDirection::InOut,
-                    PortType::Event => PortDirection::In,
-                }),
-                port_type: resolved_port_type,
+                direction: None, // 简化处理，实际可能需要解析 'inverse of'
+                classifier: resolve_classifier(classifier_qname).map(FeatureGroupReference::Classifier),
             });
         }
 
-        // 访问特征：data access / subprogram access
-        if let Some(at) = access_type_str {
-            let direction = access_direction.unwrap_or(AccessDirection::Provides);
+        // 处理 Port 和 Parameter
+        if let Some(pt) = port_or_param_type_str {
+            let classifier = resolve_classifier(classifier_qname.clone());
+            
+            // 转换 PortDataTypeReference
+            let port_ref = classifier.map(PortDataTypeReference::Classifier);
 
-            // 构造分类器（若存在）
-            let map_classifier_to_component_classifier = || -> Option<UniqueComponentClassifierReference> {
-                classifier_qname.clone().map(|qname| {
-                    let type_id = qname.split("::").last().unwrap_or(&qname).to_string();
-                    
-                    // 智能判断：如果以.Impl结尾，认为是实现引用
-                    if type_id.ends_with("Impl") {
-                        UniqueComponentClassifierReference::Implementation(UniqueImplementationReference {
-                            package_prefix: None,
-                            implementation_name: ImplementationName {
-                                type_identifier: type_id,
-                                implementation_identifier: String::new(),
-                            },
-                        })
-                    } else {
-                        // 否则认为是类型引用
-                        UniqueComponentClassifierReference::Type(UniqueImplementationReference {
-                            package_prefix: None,
-                            implementation_name: ImplementationName {
-                                type_identifier: type_id,
-                                implementation_identifier: String::new(),
-                            },
-                        })
-                    }
-                })
-            };
+            if pt == "parameter" {
+                return Feature::Parameter(ParameterSpec {
+                    identifier,
+                    direction: direction.unwrap_or(PortDirection::In),
+                    classifier: port_ref,
+                });
+            } else {
+                let resolved_port_type = match pt {
+                    "data port" => PortType::Data { classifier: port_ref },
+                    "event data port" => PortType::EventData { classifier: port_ref },
+                    "event port" => PortType::Event,
+                    _ => panic!("Unknown port type"),
+                };
+                return Feature::Port(PortSpec {
+                    identifier,
+                    direction: direction.unwrap_or(PortDirection::InOut),
+                    port_type: resolved_port_type,
+                });
+            }
+        }
 
-            match at {
+        // 处理 Access (SubcomponentAccess)
+        if !access_type_str.is_empty() {
+            let dir = access_direction.unwrap_or(AccessDirection::Requires); // Access 默认通常是 requires (视具体 AADL 版本而定，通常显式指定)
+            let cls = resolve_classifier(classifier_qname);
+
+            match access_type_str.as_str() {
                 "data" => {
-                    let classifier = map_classifier_to_component_classifier()
-                        .map(DataAccessReference::Classifier);
                     return Feature::SubcomponentAccess(SubcomponentAccessSpec::Data(DataAccessSpec {
-                        identifier,
-                        direction,
-                        classifier,
+                        identifier, direction: dir, classifier: cls.map(DataAccessReference::Classifier)
                     }));
                 }
                 "subprogram" => {
-                    let classifier = map_classifier_to_component_classifier()
-                        .map(SubprogramAccessReference::Classifier);
-                    return Feature::SubcomponentAccess(SubcomponentAccessSpec::Subprogram(
-                        SubprogramAccessSpec {
-                            identifier,
-                            direction,
-                            classifier,
-                        },
-                    ));
+                    return Feature::SubcomponentAccess(SubcomponentAccessSpec::Subprogram(SubprogramAccessSpec {
+                        identifier, direction: dir, classifier: cls.map(SubprogramAccessReference::Classifier)
+                    }));
                 }
-                other => panic!("Unknown access type: {}", other),
+                "subprogram group" => {
+                    return Feature::SubcomponentAccess(SubcomponentAccessSpec::SubprogramGroup(SubprogramGroupAccessSpec {
+                        identifier, direction: dir, classifier: cls.map(SubprogramGroupAccessReference::Classifier)
+                    }));
+                }
+                "bus" => {
+                    return Feature::SubcomponentAccess(SubcomponentAccessSpec::Bus(BusAccessSpec {
+                        identifier, direction: dir, bus_type: BusType::Bus, classifier: cls.map(BusAccessReference::Classifier)
+                    }));
+                }
+                "virtual bus" => {
+                    // 复用 BusAccessSpec 或使用 VirtualBusAccessSpec
+                    return Feature::SubcomponentAccess(SubcomponentAccessSpec::VirtualBus(VirtualBusAccessSpec {
+                        identifier, direction: dir, classifier: cls.map(BusAccessReference::Classifier)
+                    }));
+                }
+                _ => panic!("Unknown access type: {}", access_type_str),
             }
         }
 
-        panic!("Unsupported feature_declaration: missing port or access spec")
+        panic!("Unknown feature declaration format");
     }
+
     pub fn transform_properties_clause(pair: Pair<aadlight_parser::Rule>) -> PropertyClause {
         if pair.as_str().contains("none") {
             return PropertyClause::ExplicitNone;
@@ -851,164 +980,37 @@ impl AADLTransformer {
         // }
 
         let inner = pair.into_inner().next().unwrap();
+    
         match inner.as_rule() {
             aadlight_parser::Rule::apply_value => {
                 let mut parts = inner.into_inner();
                 let number = parts.next().unwrap().as_str().trim().to_string();
                 let applies_to = parts.next().unwrap().as_str().trim().to_string();
-                PropertyValue::Single(PropertyExpression::Apply(ApplyTerm {
-                    number,
-                    applies_to,
-                }))
+                PropertyValue::Single(PropertyExpression::Apply(ApplyTerm { number, applies_to }))
             }
             aadlight_parser::Rule::range_value => {
-                // println!("=== 调试 range_value ===");
-                // println!("inner = Rule::{:?}, text = {}", inner.as_rule(), inner.as_str());
-                // for (i, inner2) in inner.clone().into_inner().enumerate() {
-                //     println!("  inner[{}]: Rule::{:?}, text = {}", i, inner2.as_rule(), inner2.as_str());
-                // }
-
                 let mut parts = inner.into_inner();
                 let lower_val = extract_identifier(parts.next().unwrap());
-                //let lower_unit = Some(parts.next().unwrap().as_str().trim().to_string());
-                // 解析下限单位（变为可选，例如优先级它没有单位）
                 let lower_unit = if parts.peek().is_some_and(|p| p.as_rule() == aadlight_parser::Rule::unit) {
                     Some(parts.next().unwrap().as_str().trim().to_string())
-                } else {
-                    None
-                };
-                
+                } else { None };
                 let upper_val = extract_identifier(parts.next().unwrap());
-                //let upper_unit = Some(parts.next().unwrap().as_str().trim().to_string());
-                // 解析上限单位（可选）
                 let upper_unit = if parts.peek().is_some_and(|p| p.as_rule() == aadlight_parser::Rule::unit) {
                     Some(parts.next().unwrap().as_str().trim().to_string())
-                } else {
-                    None
-                };
-
-
-                // PropertyValue::List(vec![
-                //     PropertyListElement::Value(PropertyExpression::String(StringTerm::Literal(lower))),
-                //     PropertyListElement::Value(PropertyExpression::String(StringTerm::Literal(upper))),
-                // ])
-                PropertyValue::List(vec![PropertyListElement::Value(
-                    PropertyExpression::IntegerRange(IntegerRangeTerm {
-                        lower: StringWithUnit {
-                            value: lower_val,
-                            unit: lower_unit,
-                        },
-                        upper: StringWithUnit {
-                            value: upper_val,
-                            unit: upper_unit,
-                        },
-                    }),
-                )])
-            }
-            aadlight_parser::Rule::literal_value => {
-                // let value = inner.as_str().trim().to_string();
-                // PropertyValue::Single(PropertyExpression::String(StringTerm::Literal(value)))
-                // println!("=== 调试 literal_value ===");
-                // println!("pair = Rule::{:?}, text = {}", inner.as_rule(), inner.as_str());
-                // for (i, inner2) in inner.clone().into_inner().enumerate() {
-                //     println!("  inner[{}]: Rule::{:?}, text = {}", i, inner2.as_rule(), inner2.as_str());
-                // }
-
-
-                let mut parts = inner.into_inner().peekable();
-
-                let first = parts.next().unwrap();
-                let unit = match parts.peek() {
-                    Some(p) if p.as_rule() == aadlight_parser::Rule::unit => {
-                        Some(extract_identifier(parts.next().unwrap()))
-                    }
-                    _ => None,
-                };
-                // println!("=== 调试 first ===");
-                // println!("first = Rule::{:?}, text = {}", first.as_rule(), first.as_str());
-                // for (i, inner2) in first.clone().into_inner().enumerate() {
-                //     println!("  innerfirst[{}]: Rule::{:?}, text = {}", i, inner2.as_rule(), inner2.as_str());
-                // }
-
-                match first.as_rule() {
-                    aadlight_parser::Rule::number => {
-                        let mut number_parts = first.into_inner().peekable();
-
-                        // 解析符号
-                        let sign = match number_parts.peek() {
-                            Some(p) if p.as_rule() == aadlight_parser::Rule::sign => {
-                                match number_parts.next().unwrap().as_str() {
-                                    "+" => Some(Sign::Plus),
-                                    "-" => Some(Sign::Minus),
-                                    _ => None,
-                                }
-                            }
-                            _ => None,
-                        };
-                        // 主数字部分
-                        let int_part = number_parts.next().unwrap().as_str().trim();
-
-                        // 判断是否为浮点数
-                        let expr = if int_part.contains('.') {
-                            let value = int_part.parse::<f64>().unwrap();
-                            PropertyExpression::Real(SignedRealOrConstant::Real(SignedReal {
-                                sign,
-                                value,
-                                unit: unit.clone(),
-                            }))
-                        } else {
-                            let value = int_part.parse::<i64>().unwrap();
-                            PropertyExpression::Integer(SignedIntergerOrConstant::Real(SignedInteger {
-                                sign,
-                                value,
-                                unit: unit.clone(),
-                            }))
-                        };
-
-                        PropertyValue::Single(expr)
-                    }
-
-                    aadlight_parser::Rule::string_literal => {
-                        let raw = first.as_str();
-                        let value = Self::strip_string_literal(raw);
-                        PropertyValue::Single(PropertyExpression::String(
-                            StringTerm::Literal(value)
-                        ))
-
-                    }
-
-                    aadlight_parser::Rule::boolean => {
-                        let val = match first.as_str() {
-                            "true" => true,
-                            "false" => false,
-                            _ => panic!("Invalid boolean"),
-                        };
-
-                        PropertyValue::Single(PropertyExpression::Boolean(BooleanTerm::Literal(val)))
-                    }
-
-                    aadlight_parser::Rule::enum_value => {
-                        let value = first.as_str().to_string();
-
-                        PropertyValue::Single(PropertyExpression::String(
-                            StringTerm::Literal(value)
-                        ))
-                    }
-
-                    _ => panic!("Unknown literal_value inner rule: {:?}", first.as_rule()),
-                }
+                } else { None };
+                
+                PropertyValue::Single(PropertyExpression::IntegerRange(IntegerRangeTerm {
+                    lower: StringWithUnit { value: lower_val, unit: lower_unit },
+                    upper: StringWithUnit { value: upper_val, unit: upper_unit },
+                }))
             }
             aadlight_parser::Rule::list_value => {
+                // 你的原代码逻辑...
                 let mut elements = Vec::new();
                 for item in inner.into_inner() {
-                    let property_value = Self::transform_property_value(item);
-                    match property_value {
-                        PropertyValue::Single(expr) => {
-                            elements.push(PropertyListElement::Value(expr));
-                        }
-                        PropertyValue::List(nested_elements) => {
-                            elements.push(PropertyListElement::NestedList(nested_elements));
-                        }
+                    match Self::transform_property_value(item) {
+                        PropertyValue::Single(expr) => elements.push(PropertyListElement::Value(expr)),
+                        PropertyValue::List(nested) => elements.push(PropertyListElement::NestedList(nested)),
                     }
                 }
                 PropertyValue::List(elements)
@@ -1016,8 +1018,6 @@ impl AADLTransformer {
             aadlight_parser::Rule::reference_value => {
                 let mut ref_parts = inner.into_inner();
                 let referenced_id = extract_identifier(ref_parts.next().unwrap());
-                
-                // 检查是否有 applies to 子句
                 let mut applies_to = None;
                 for part in ref_parts {
                     if part.as_rule() == aadlight_parser::Rule::qualified_identifier {
@@ -1025,49 +1025,106 @@ impl AADLTransformer {
                         break;
                     }
                 }
-                
-                PropertyValue::Single(PropertyExpression::Reference(ReferenceTerm { 
-                    identifier: referenced_id,
-                    applies_to,
-                }))
+                PropertyValue::Single(PropertyExpression::Reference(ReferenceTerm { identifier: referenced_id, applies_to }))
             }
             aadlight_parser::Rule::component_classifier_value => {
                 let mut inner_iter = inner.into_inner();
-                let qualified_identifier = inner_iter.next().unwrap();
-                let qname = qualified_identifier.as_str().to_string();
-                
-                // 解析包前缀和类型名
+                let qname = inner_iter.next().unwrap().as_str().to_string();
                 let parts: Vec<&str> = qname.split("::").collect();
-                let (package_prefix, type_id) = if parts.len() > 1 {
-                    let package_name = parts[0..parts.len()-1].join("::");
-                    let type_name = parts.last().unwrap().to_string();
-                    (Some(package_name), type_name)
+                let (pkg, type_id) = if parts.len() > 1 { (Some(parts[0].to_string()), parts[1].to_string()) } else { (None, qname.clone()) };
+                let unique_ref = UniqueComponentClassifierReference::Type(UniqueImplementationReference {
+                    package_prefix: pkg.map(|p| PackageName(vec![p])),
+                    implementation_name: ImplementationName { type_identifier: type_id, implementation_identifier: "".into() }
+                });
+                PropertyValue::Single(PropertyExpression::ComponentClassifier(ComponentClassifierTerm { unique_component_classifier_reference: unique_ref }))
+            }
+
+            aadlight_parser::Rule::literal_value => {
+                let val_inner = inner.into_inner().next().unwrap();
+                match val_inner.as_rule() {
+                    // 数值类型 (Number + Optional Unit)
+                    aadlight_parser::Rule::numeric_literal => {
+                        let mut parts = val_inner.into_inner();
+                        let number_pair = parts.next().unwrap(); // number rule
+                        let unit = parts.next().map(|u| u.as_str().to_string()); // unit rule
+
+                        // 解析 number
+                        let mut num_parts = number_pair.into_inner().peekable();
+                        let sign = match num_parts.peek() {
+                            Some(p) if p.as_rule() == aadlight_parser::Rule::sign => {
+                                match num_parts.next().unwrap().as_str() {
+                                    "+" => Some(Sign::Plus), "-" => Some(Sign::Minus), _ => None,
+                                }
+                            }
+                            _ => None,
+                        };
+                        let val_str = num_parts.next().unwrap().as_str();
+
+                        if val_str.contains('.') {
+                            PropertyValue::Single(PropertyExpression::Real(SignedRealOrConstant::Real(SignedReal {
+                                sign,
+                                value: val_str.parse().unwrap_or(0.0),
+                                unit,
+                            })))
+                        } else {
+                            PropertyValue::Single(PropertyExpression::Integer(SignedIntergerOrConstant::Real(SignedInteger {
+                                sign,
+                                value: val_str.parse().unwrap_or(0),
+                                unit,
+                            })))
+                        }
+                    }
+                    // 字符串
+                    aadlight_parser::Rule::string_literal => {
+                        // strip_string_literal 实现：去头去尾的引号
+                        let raw = val_inner.as_str();
+                        let value = raw[1..raw.len()-1].to_string(); 
+                        PropertyValue::Single(PropertyExpression::String(StringTerm::Literal(value)))
+                    }
+                    // 布尔
+                    aadlight_parser::Rule::boolean => {
+                        let val = val_inner.as_str() == "true";
+                        PropertyValue::Single(PropertyExpression::Boolean(BooleanTerm::Literal(val)))
+                    }
+                    // 枚举 (AADL预定义)
+                    aadlight_parser::Rule::enum_value => {
+                        PropertyValue::Single(PropertyExpression::String(StringTerm::Literal(val_inner.as_str().to_string())))
+                    }
+                    _ => panic!("Unknown literal inner: {:?}", val_inner.as_rule()),
+                }
+            }
+
+            // 2. 处理 Record ([ x => v; ])
+            aadlight_parser::Rule::record_value => {
+                let mut fields = Vec::new();
+                for field_pair in inner.into_inner() { // 遍历 record_field
+                    let mut field_parts = field_pair.into_inner();
+                    let name = extract_identifier(field_parts.next().unwrap());
+                    let value_pair = field_parts.next().unwrap();
+                    let value = Self::transform_property_value(value_pair);
+                    fields.push(RecordFieldTerm { name, value });
+                }
+                PropertyValue::Single(PropertyExpression::Record(RecordTerm { fields: fields }))
+            }
+
+            aadlight_parser::Rule::computed_value => {
+                let func_name = extract_identifier(inner.into_inner().next().unwrap());
+                PropertyValue::Single(PropertyExpression::Computed(func_name))
+            }
+
+            aadlight_parser::Rule::property_term => {
+                let qname = inner.as_str().to_string();
+                // 这里简单解析是否包含 "::"
+                let parts: Vec<&str> = qname.split("::").collect();
+                let (set, name) = if parts.len() > 1 {
+                    (Some(parts[0].to_string()), parts[1].to_string())
                 } else {
-                    (None, qname.to_string())
+                    (None, qname.clone())
                 };
                 
-                // 智能判断：如果以.Impl结尾，认为是实现引用
-                let unique_ref = if type_id.ends_with("Impl") {
-                    UniqueComponentClassifierReference::Implementation(UniqueImplementationReference {
-                        package_prefix: package_prefix.map(|p| PackageName(p.split("::").map(|s| s.to_string()).collect())),
-                        implementation_name: ImplementationName {
-                            type_identifier: type_id,
-                            implementation_identifier: String::new(),
-                        },
-                    })
-                } else {
-                    // 否则认为是类型引用
-                    UniqueComponentClassifierReference::Type(UniqueImplementationReference {
-                        package_prefix: package_prefix.map(|p| PackageName(p.split("::").map(|s| s.to_string()).collect())),
-                        implementation_name: ImplementationName {
-                            type_identifier: type_id,
-                            implementation_identifier: String::new(),
-                        },
-                    })
-                };
-                
-                PropertyValue::Single(PropertyExpression::ComponentClassifier(ComponentClassifierTerm {
-                    unique_component_classifier_reference: unique_ref,
+                PropertyValue::Single(PropertyExpression::ReferenceConstant(PropertyConstantTerm {
+                    property_set: set,
+                    name,
                 }))
             }
             _ => {
@@ -1404,13 +1461,14 @@ impl AADLTransformer {
             UniqueComponentClassifierReference::Implementation(UniqueImplementationReference {
                 package_prefix: None,
                 implementation_name: ImplementationName {
-                    type_identifier: extract_identifier(inner_iter.next().unwrap()),
+                    // type_identifier: extract_identifier(inner_iter.next().unwrap()),
+                    type_identifier: type_name,
                     implementation_identifier: String::new(),
                 },
             }),
         );
         
-        // 3. 处理属性
+        // 处理属性
         let mut properties = Vec::new();
 
         // 遍历剩余的 token
@@ -1558,5 +1616,106 @@ impl AADLTransformer {
         } else {
             AccessEndpoint::ComponentAccess(reference.to_string())
         }
+    }
+
+    fn basic_to_arithmetic(basic: BasicExpression) -> ArithmeticExpression {
+        ArithmeticExpression {
+            left: AddExpression {
+                left: basic,
+                operations: Vec::new(), // 没有加减法操作
+            },
+            operations: Vec::new(), // 没有其他算术操作
+        }
+    }
+
+    pub fn transform_execute_condition(pair: Pair<aadlight_parser::Rule>) -> ExecuteCondition {
+        let mut inner = pair.into_inner();
+        let first_part = inner.next().unwrap();
+
+        // 我们需要构建 NotConjunctionExpression
+        let not_conjunction = match first_part.as_rule() {
+            // === 情况 A: 只有 identifier ===
+            // 规则: identifier
+            aadlight_parser::Rule::identifier => {
+                let id_str = extract_identifier(first_part);
+                // 构造 BasicExpression::BehaviorVariable
+                let basic = BasicExpression::BehaviorVariable(id_str);
+                // 转换为 ArithmeticExpression
+                let arithmetic = Self::basic_to_arithmetic(basic);
+
+                NotConjunctionExpression {
+                    has_not: false,
+                    conjunction: ConjunctionExpression {
+                        left: arithmetic,
+                        comparison: None,
+                    },
+                }
+            },
+
+            // === 情况 B: not identifier ===
+            // 规则: unary_boolean_operator ~ identifier
+            aadlight_parser::Rule::unary_boolean_operator => {
+                // first_part 是 "not"
+                // 获取下一个 token (identifier)
+                let id_pair = inner.next().unwrap();
+                let id_str = extract_identifier(id_pair);
+                
+                let basic = BasicExpression::BehaviorVariable(id_str);
+                let arithmetic = Self::basic_to_arithmetic(basic);
+
+                NotConjunctionExpression {
+                    has_not: true, // 标记为 true
+                    conjunction: ConjunctionExpression {
+                        left: arithmetic,
+                        comparison: None,
+                    },
+                }
+            },
+
+            // === 情况 C: number < identifier ===
+            // 规则: number ~ less_than_operator ~ identifier
+            aadlight_parser::Rule::number => {
+                // 1. 获取左边的数字
+                let number_str = first_part.as_str().to_string();
+                let left_basic = BasicExpression::NumericOrConstant(number_str);
+                let left_arithmetic = Self::basic_to_arithmetic(left_basic);
+
+                // 2. 跳过中间的 "<" 操作符
+                let _op_pair = inner.next().unwrap(); 
+
+                // 3. 获取右边的 identifier
+                let id_pair = inner.next().unwrap();
+                let id_str = extract_identifier(id_pair);
+                let right_basic = BasicExpression::BehaviorVariable(id_str);
+                let right_arithmetic = Self::basic_to_arithmetic(right_basic);
+
+                // 4. 构建比较表达式
+                let comparison = ComparisonExpression {
+                    operator: ComparisonOperator::LessThan,
+                    right: right_arithmetic,
+                };
+
+                NotConjunctionExpression {
+                    has_not: false,
+                    conjunction: ConjunctionExpression {
+                        left: left_arithmetic,
+                        comparison: Some(comparison),
+                    },
+                }
+            },
+
+            _ => panic!("Unexpected rule in execute_condition: {:?}", first_part.as_rule()),
+        };
+
+        // 最终包装层级： NotConjunction -> Disjunction -> Behavior -> ExecuteCondition
+        let disjunction = DisjunctionExpression {
+            not_conjunctions: vec![not_conjunction],
+        };
+
+        let behavior = BehaviorExpression {
+            disjunctions: vec![disjunction],
+        };
+
+        ExecuteCondition::LogicalExpression(behavior)
     }
 }

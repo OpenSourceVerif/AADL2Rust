@@ -319,6 +319,51 @@ impl AadlConverter {
                             }
                         }
                     }
+                    Feature::FeatureGroup(fg) => {
+                        // 获取 Feature Group 的类型名称
+                        let fg_type_name = match &fg.classifier {
+                            Some(FeatureGroupReference::Classifier(unique_ref)) => {
+                                match unique_ref {
+                                    UniqueComponentClassifierReference::Type(t) => t.implementation_name.type_identifier.clone(),
+                                    UniqueComponentClassifierReference::Implementation(i) => {
+                                        i.implementation_name.type_identifier.clone() 
+                                    }
+                                }
+                            },
+                            Some(FeatureGroupReference::Prototype(p)) => p.clone(),
+                            None => "UnspecifiedFeatureGroup".to_string(),
+                        };
+
+                        // 生成字段: pub feature_name: FeatureGroupType
+                        fields.push(Field {
+                            name: fg.identifier.to_lowercase(),
+                            ty: Type::Named(fg_type_name.clone()),
+                            docs: vec![format!("// Feature Group: {}", fg.identifier)],
+                            attrs: Vec::new(),
+                        });
+                    }
+
+                    Feature::Parameter(param) => {
+                        // 获取参数的数据类型
+                        let param_type = match &param.classifier {
+                            Some(PortDataTypeReference::Classifier(unique_ref)) => {
+                                match unique_ref {
+                                    UniqueComponentClassifierReference::Type(t) => Type::Named(t.implementation_name.type_identifier.clone()),
+                                    UniqueComponentClassifierReference::Implementation(i) => Type::Named(i.implementation_name.type_identifier.clone()),
+                                }
+                            },
+                            Some(PortDataTypeReference::Prototype(p)) => Type::Named(p.clone()),
+                            None => Type::Named("()".to_string()), // 默认 Unit 类型
+                        };
+
+                        // 生成字段: pub param_name: ParamType
+                        fields.push(Field {
+                            name: param.identifier.to_lowercase(),
+                            ty: param_type,
+                            docs: vec![format!("// Parameter: {} ({:?})", param.identifier, param.direction)],
+                            attrs: Vec::new(),
+                        });
+                    }
                 }
             }
         }
