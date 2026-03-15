@@ -229,7 +229,8 @@ pub mod aadl_ast_cj {
         /// logical_value_expression
         LogicalExpression(BehaviorExpression),
         /// behavior_action_block_timeout_catch (暂时忽略timeout相关)
-        ActionBlockTimeoutCatch,
+        // ActionBlockTimeoutCatch,
+        Timeout,
         /// otherwise
         Otherwise,
     }

@@ -316,11 +316,16 @@ transitions = {
 }
 
 transition_declaration = {
-    identifier ~ 
+    (identifier ~ behavior_transition_priority? ~ ":")? ~
+    identifier ~ ("," ~ identifier)* ~
     "-[" ~ guard? ~ "]->" ~ 
     identifier ~ 
     behavior_action_block? ~
     ";" 
+}
+
+behavior_transition_priority = {
+    "[" ~ number ~ "]"
 }
 
 // 守卫条件
@@ -370,9 +375,18 @@ frozen_ports = {
 }
 
 // execute_condition ::= logical_value_expression | otherwise
-// logical_value_expression在标准中没找到
 // TODO 特殊处理number < identifier的情况（已解决，在transform.rs中解析）
+// execute_condition = {
+//     (unary_boolean_operator? ~ identifier) |
+//     (number ~ less_than_operator ~ identifier)
+// }
 execute_condition = {
+    "otherwise" |
+    "timeout" | 
+    logical_value_expression
+}
+
+logical_value_expression = {
     (unary_boolean_operator? ~ identifier) |
     (number ~ less_than_operator ~ identifier)
 }
