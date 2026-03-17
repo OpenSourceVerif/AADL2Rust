@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{Result, Write};
 use std::path::Path;
+use crate::aadlight_parser::aadl::Rule;
 
 /* =======================
  * Component Category
@@ -65,13 +66,13 @@ pub struct ModelStatistics {
 
 impl ModelStatistics {
     /// 唯一入口：只接收 Pairs<Rule>
-    pub fn from_pairs(pairs: Pairs<aadlight_parser::Rule>, output_name: String) -> Result<()> {
+    pub fn from_pairs(pairs: Pairs<Rule>, output_name: String) -> Result<()> {
         let mut stats = ModelStatistics::default();
 
         for pair in pairs {
-            if pair.as_rule() == aadlight_parser::Rule::file {
+            if pair.as_rule() == Rule::file {
                 for inner in pair.into_inner() {
-                    if inner.as_rule() == aadlight_parser::Rule::package_declaration {
+                    if inner.as_rule() == Rule::package_declaration {
                         let package_name =
                             extract_package_name(&inner).unwrap_or("unknown_package".to_string());
 
@@ -93,17 +94,17 @@ impl ModelStatistics {
      * Package-level traversal
      * ======================= */
 
-    fn collect_from_package(&mut self, pair: Pair<aadlight_parser::Rule>) {
-        debug_assert_eq!(pair.as_rule(), aadlight_parser::Rule::package_declaration);
+    fn collect_from_package(&mut self, pair: Pair<Rule>) {
+        debug_assert_eq!(pair.as_rule(), Rule::package_declaration);
 
         for inner in pair.into_inner() {
-            if inner.as_rule() == aadlight_parser::Rule::package_sections {
+            if inner.as_rule() == Rule::package_sections {
                 self.collect_from_package_section(inner);
             }
         }
     }
 
-    fn collect_from_package_section(&mut self, pair: Pair<aadlight_parser::Rule>) {
+    fn collect_from_package_section(&mut self, pair: Pair<Rule>) {
         let mut inner_iter = pair.into_inner();
 
         // public / private 或 declaration
@@ -115,19 +116,19 @@ impl ModelStatistics {
         }
 
         for inner in inner_iter {
-            if inner.as_rule() == aadlight_parser::Rule::declaration {
+            if inner.as_rule() == Rule::declaration {
                 self.collect_from_declaration(inner);
             }
         }
     }
 
-    fn collect_from_declaration(&mut self, pair: Pair<aadlight_parser::Rule>) {
+    fn collect_from_declaration(&mut self, pair: Pair<Rule>) {
         let inner = pair.into_inner().next().unwrap();
 
         match inner.as_rule() {
-            // aadlight_parser::Rule::component_type //不统计组件类型，只统计组件实现。因此Data的数据不可信。
+            // Rule::component_type //不统计组件类型，只统计组件实现。因此Data的数据不可信。
             // |
-            aadlight_parser::Rule::component_implementation => {
+            Rule::component_implementation => {
                 if let Some(cat) = extract_component_category(&inner) {
                     self.increment(cat);
                 }
@@ -226,13 +227,13 @@ impl ModelStatistics {
  * Helpers
  * ======================= */
 
-fn extract_package_name(pair: &Pair<aadlight_parser::Rule>) -> Option<String> {
+fn extract_package_name(pair: &Pair<Rule>) -> Option<String> {
     let mut inner = pair.clone().into_inner();
     let name_pair = inner.next()?;
     Some(name_pair.as_str().to_string())
 }
 
-fn extract_component_category(pair: &Pair<aadlight_parser::Rule>) -> Option<ComponentCategory> {
+fn extract_component_category(pair: &Pair<Rule>) -> Option<ComponentCategory> {
     let mut inner = pair.clone().into_inner();
     let cat = inner.next()?.as_str();
 

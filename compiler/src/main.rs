@@ -12,7 +12,8 @@ pub mod transform_annex;
 use compiler::printmessage::*;
 use aadl_ast2rust_code::intermediate_print::*;
 use aadl_ast2rust_code::merge_utils::*;
-use aadlight_parser::AADLParser;
+// use aadlight_parser::AADLParser;
+use aadlight_parser::aadl::{AADLParser, Rule};
 use clap::Parser as ClapParser;
 use crate::model_statistics::*;
 use pest::error::ErrorVariant;
@@ -270,7 +271,7 @@ fn process_test_case(test_case: &TestCase) {
         }
     };
 
-    match AADLParser::parse(aadlight_parser::Rule::file, &aadl_input) {
+    match AADLParser::parse(Rule::file, &aadl_input) {
         Ok(pairs) => {
             println!("=== 解析成功，共 {} 个pair ===", pairs.clone().count());
 

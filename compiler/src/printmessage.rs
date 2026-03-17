@@ -2,10 +2,11 @@
 use crate::aadlight_parser;
 use pest::{iterators::Pair};
 use super::ast::aadl_ast_cj::*;
+use crate::aadlight_parser::aadl::Rule;
 
-pub fn print_pair(pair: Pair<aadlight_parser::Rule>, indent: usize) {
+pub fn print_pair(pair: Pair<Rule>, indent: usize) {
     match pair.as_rule() {
-        aadlight_parser::Rule::WHITESPACE | aadlight_parser::Rule::COMMENT => return,
+        Rule::WHITESPACE | Rule::COMMENT => return,
         _ => {
             let span = pair.as_span();
             let (start_line, _) = span.start_pos().line_col();

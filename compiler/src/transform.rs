@@ -3,7 +3,8 @@
     clippy::single_match,
     clippy::if_same_then_else,
 )]
-use crate::aadlight_parser;
+// use crate::aadlight_parser;
+use crate::aadlight_parser::aadl::{AADLParser, Rule};
 use super::ast::aadl_ast_cj::*;
 use pest::{iterators::Pair};
 use crate::transform_annex::*;
@@ -66,12 +67,12 @@ pub fn get_global_port_manager() -> &'static Mutex<PortManager> {
 }
 
 // 辅助函数：从 Pair 中提取标识符
-pub fn extract_identifier(pair: Pair<aadlight_parser::Rule>) -> String {
+pub fn extract_identifier(pair: Pair<Rule>) -> String {
     pair.as_str().trim().to_string()
 }
 
 // 辅助函数：从 Pair 中提取包名
-pub fn extract_package_name(pair: Pair<aadlight_parser::Rule>) -> PackageName {
+pub fn extract_package_name(pair: Pair<Rule>) -> PackageName {
     PackageName(
         pair.as_str()
             .split("::")
@@ -99,13 +100,13 @@ impl AADLTransformer {
         }
     }
     
-    pub fn transform_file(pairs: Vec<Pair<aadlight_parser::Rule>>) -> Vec<Package> {
+    pub fn transform_file(pairs: Vec<Pair<Rule>>) -> Vec<Package> {
         let mut transformer = Self::new();
         let mut packages = Vec::new();
         
         // for pair in pairs {
         //     println!("处理规则: {:?}, 内容: {}", pair.as_rule(), pair.as_str());
-        //     if pair.as_rule() == aadlight_parser::Rule::package_declaration { //检查是否是package_declaration规则
+        //     if pair.as_rule() == Rule::package_declaration { //检查是否是package_declaration规则
         //         if let Some(pkg) = Self::transform_package(pair) {
         //         }
         //     }
@@ -115,11 +116,11 @@ impl AADLTransformer {
             //println!("  内部规则: {:?}", pair.as_rule());
 
             // 进入 file 规则内部，提取出真正的 package_declaration
-            if pair.as_rule() == aadlight_parser::Rule::file {
+            if pair.as_rule() == Rule::file {
                 for inner in pair.into_inner() {
                     //println!("  内部规则: {:?}, 内容: {}", inner.as_rule(), inner.as_str());
                     //println!("  内部规则: {:?}", inner.as_rule());
-                    if inner.as_rule() == aadlight_parser::Rule::package_declaration {
+                    if inner.as_rule() == Rule::package_declaration {
                         if let Some(pkg) = transformer.transform_package(inner) {
                             packages.push(pkg);
                         }
@@ -132,7 +133,7 @@ impl AADLTransformer {
         packages
     }
     
-    pub fn transform_package(&mut self, pair: Pair<aadlight_parser::Rule>) -> Option<Package> {
+    pub fn transform_package(&mut self, pair: Pair<Rule>) -> Option<Package> {
         //println!("=== 调试 package ===");
         //println!("pair = Rule::{:?}", pair.as_rule());
         // for (i, inner) in pair.clone().into_inner().enumerate() {
@@ -150,10 +151,10 @@ impl AADLTransformer {
         for inner in inner_iter {
             //println!("  内部规则: {:?}, 内容: {}", inner.as_rule(), inner.as_str());
             match inner.as_rule() {
-                aadlight_parser::Rule::visibility_declarations => {
+                Rule::visibility_declarations => {
                     visibility_decls.push(Self::transform_visibility_declaration(inner));
                 }
-                aadlight_parser::Rule::package_sections => {
+                Rule::package_sections => {
                     let section = self.transform_package_section(inner);
                     if section.is_public {
                         public_section = Some(section);
@@ -174,7 +175,7 @@ impl AADLTransformer {
         })
     }
     
-    pub fn transform_visibility_declaration(pair: Pair<aadlight_parser::Rule>) -> VisibilityDeclaration {
+    pub fn transform_visibility_declaration(pair: Pair<Rule>) -> VisibilityDeclaration {
         // 首先收集所有内部项到向量中，这样我们可以多次遍历
         let items: Vec<_> = pair.into_inner().collect();
         // println!("🧩 解析到 {} 个 item:", items.len());
@@ -192,7 +193,7 @@ impl AADLTransformer {
                 // 跳过第一个"with"项
                 for item in items.iter().skip(1) {
                     match item.as_rule() {
-                        aadlight_parser::Rule::package_name => {
+                        Rule::package_name => {
                             //如果这里是base_types、data_model...，则说明是属性集名，不做处理。无法区分开，文件名还是属性集名，现在的方法是穷举属性集名。
                             match item.clone().as_str().to_lowercase().as_str() {
                                 "base_types" | "data_model" => {}
@@ -204,7 +205,7 @@ impl AADLTransformer {
                             //     packages.push(extract_package_name(item.clone()));
                             // }
                         }
-                        aadlight_parser::Rule::property_set_name => {
+                        Rule::property_set_name => {
                             property_sets.push(extract_identifier(item.clone()));
                         }
                         _ => {} // 忽略逗号等其他符号
@@ -234,7 +235,7 @@ impl AADLTransformer {
         }
     }
     
-    pub fn transform_package_section(&mut self, pair: Pair<aadlight_parser::Rule>) -> PackageSection {
+    pub fn transform_package_section(&mut self, pair: Pair<Rule>) -> PackageSection {
         // println!("=== 调试 package_section ===");
         // println!("pair = Rule::{:?}", pair.as_rule());
         // for (i, inner) in pair.clone().into_inner().enumerate() {
@@ -266,7 +267,7 @@ impl AADLTransformer {
         // 处理剩余的声明
         for inner in inner_iter {
             match inner.as_rule() {
-                aadlight_parser::Rule::declaration => {
+                Rule::declaration => {
                     declarations.push(self.transform_declaration(inner));
                 }
                 _ => {} // 忽略其他规则
@@ -279,10 +280,10 @@ impl AADLTransformer {
         }
     }
     
-    pub fn transform_declaration(&mut self, pair: Pair<aadlight_parser::Rule>) -> AadlDeclaration {
+    pub fn transform_declaration(&mut self, pair: Pair<Rule>) -> AadlDeclaration {
         let inner = pair.into_inner().next().unwrap();
         match inner.as_rule() {
-            aadlight_parser::Rule::component_type => {
+            Rule::component_type => {
                 // AadlDeclaration::ComponentType(self.transform_component_type(inner))
                 let component_def = self.transform_component_type(inner);
                 let component_type = match component_def {
@@ -298,10 +299,10 @@ impl AADLTransformer {
                 };
                 AadlDeclaration::ComponentType(component_type)
             }
-            aadlight_parser::Rule::component_implementation => {
+            Rule::component_implementation => {
                 AadlDeclaration::ComponentImplementation(Self::transform_component_implementation(inner))
             }
-            aadlight_parser::Rule::annex_library => {
+            Rule::annex_library => {
                 AadlDeclaration::AnnexLibrary(AnnexLibrary {})
             }
             _ => panic!("Unsupported declaration type: {:?}", inner.as_rule()),
@@ -309,16 +310,16 @@ impl AADLTransformer {
     }
     
     // 提取限定标识符（从pest的qualified_identifier节点转换）
-    pub fn extract_qualified_identifier(pair: Pair<aadlight_parser::Rule>) -> QualifiedIdentifier {
+    pub fn extract_qualified_identifier(pair: Pair<Rule>) -> QualifiedIdentifier {
         // `qualified_identifier` 的Pest规则是 `(identifier ~ "::")* ~ identifier`
         let parts: Vec<String> = pair.into_inner()
-            .filter(|inner_pair| inner_pair.as_rule() == aadlight_parser::Rule::identifier)
+            .filter(|inner_pair| inner_pair.as_rule() == Rule::identifier)
             .map(|id_pair| id_pair.as_str().to_string())
             .collect();
         QualifiedIdentifier { parts }
     }
     
-    pub fn transform_component_type(&mut self, pair: Pair<aadlight_parser::Rule>) -> ComponentDef {
+    pub fn transform_component_type(&mut self, pair: Pair<Rule>) -> ComponentDef {
         let mut inner_iter = pair.into_inner();
         
         let category = match inner_iter.next().unwrap().as_str() {
@@ -344,21 +345,21 @@ impl AADLTransformer {
 
         for inner in inner_iter {
             match inner.as_rule() {
-                aadlight_parser::Rule::prototypes => {
+                Rule::prototypes => {
                     prototypes = Self::transform_prototypes_clause(inner);
                 }
-                aadlight_parser::Rule::features => {
+                Rule::features => {
                     features = self.transform_features_clause(inner);
                 }
-                aadlight_parser::Rule::properties => {
+                Rule::properties => {
                     properties = Self::transform_properties_clause(inner);
                 }
-                aadlight_parser::Rule::annex_subclause => {
+                Rule::annex_subclause => {
                     if let Some(annex) = transform_annex_subclause(inner) {
                         annexes.push(annex);
                     }
                 }
-                aadlight_parser::Rule::extends => {
+                Rule::extends => {
                     //TODO: 处理extends（已解决）
                     //println!("extends: {:?}", inner.as_str());
                     let qual_id_pair = inner.into_inner().next().expect("extends必须指定组件类型引用");
@@ -411,14 +412,14 @@ impl AADLTransformer {
         }
     }
     
-    pub fn transform_prototypes_clause(pair: Pair<aadlight_parser::Rule>) -> PrototypeClause {
+    pub fn transform_prototypes_clause(pair: Pair<Rule>) -> PrototypeClause {
         if pair.as_str().contains("none") {
             return PrototypeClause::Empty;
         }
         
         let mut prototypes = Vec::new();
         for inner in pair.into_inner() {
-            if inner.as_rule() == aadlight_parser::Rule::prototype_declaration {
+            if inner.as_rule() == Rule::prototype_declaration {
                 prototypes.push(Self::transform_prototype_declaration(inner));
             }
         }
@@ -430,7 +431,7 @@ impl AADLTransformer {
         }
     }
     
-    pub fn transform_prototype_declaration(pair: Pair<aadlight_parser::Rule>) -> Prototype {
+    pub fn transform_prototype_declaration(pair: Pair<Rule>) -> Prototype {
         let mut inner_iter = pair.into_inner();
         let _identifier = extract_identifier(inner_iter.next().unwrap());
         let _colon = inner_iter.next();
@@ -589,14 +590,14 @@ impl AADLTransformer {
         }
     }
 
-    pub fn transform_features_clause(&mut self, pair: Pair<aadlight_parser::Rule>) -> FeatureClause {
+    pub fn transform_features_clause(&mut self, pair: Pair<Rule>) -> FeatureClause {
         if pair.as_str().contains("none") {
             return FeatureClause::Empty;
         }
         
         let mut features = Vec::new();
         for inner in pair.into_inner() {
-            if inner.as_rule() == aadlight_parser::Rule::feature_declaration {
+            if inner.as_rule() == Rule::feature_declaration {
                 let feature = Self::transform_feature_declaration(inner);
                 
                 // 收集端口信息
@@ -617,7 +618,7 @@ impl AADLTransformer {
         }
     }
     
-    // pub fn transform_feature_declaration(pair: Pair<aadlight_parser::Rule>) -> Feature {
+    // pub fn transform_feature_declaration(pair: Pair<Rule>) -> Feature {
     //     let mut inner_iter = pair.into_inner();
 
     //     let identifier = extract_identifier(inner_iter.next().unwrap()); // p
@@ -629,7 +630,7 @@ impl AADLTransformer {
 
     //     for inner in inner_iter {
     //         match inner.as_rule() {
-    //             aadlight_parser::Rule::direction => {
+    //             Rule::direction => {
     //                 direction = match inner.as_str() {
     //                     "in" => Some(PortDirection::In),
     //                     "out" => Some(PortDirection::Out),
@@ -637,23 +638,23 @@ impl AADLTransformer {
     //                     _ => None,
     //                 };
     //             }
-    //             aadlight_parser::Rule::port_type => {
+    //             Rule::port_type => {
     //                 port_type_str = Some(inner.as_str());
     //             }
-    //             aadlight_parser::Rule::access_direction => {
+    //             Rule::access_direction => {
     //                 access_direction = match inner.as_str() {
     //                     "provides" => Some(AccessDirection::Provides),
     //                     "requires" => Some(AccessDirection::Requires),
     //                     _ => None,
     //                 };
     //             }
-    //             aadlight_parser::Rule::access_type => {
+    //             Rule::access_type => {
     //                 access_type_str = Some(inner.as_str());
     //             }
-    //             aadlight_parser::Rule::qualified_identifier => {
+    //             Rule::qualified_identifier => {
     //                 classifier_qname = Some(inner.as_str().to_string());
     //             }
-    //             aadlight_parser::Rule::identifier => {
+    //             Rule::identifier => {
     //                 // 兼容老语法中使用 identifier 作为类型名
     //                 if classifier_qname.is_none() {
     //                     classifier_qname = Some(inner.as_str().to_string());
@@ -762,7 +763,7 @@ impl AADLTransformer {
 
     //     panic!("Unsupported feature_declaration: missing port or access spec")
     // }
-    pub fn transform_feature_declaration(pair: Pair<aadlight_parser::Rule>) -> Feature {
+    pub fn transform_feature_declaration(pair: Pair<Rule>) -> Feature {
         let mut inner_iter = pair.into_inner();
         let identifier = extract_identifier(inner_iter.next().unwrap());
 
@@ -776,7 +777,7 @@ impl AADLTransformer {
 
         for inner in inner_iter {
             match inner.as_rule() {
-                aadlight_parser::Rule::direction => {
+                Rule::direction => {
                     direction = match inner.as_str() {
                         "in" => Some(PortDirection::In),
                         "out" => Some(PortDirection::Out),
@@ -784,20 +785,20 @@ impl AADLTransformer {
                         _ => None,
                     };
                 }
-                aadlight_parser::Rule::port_or_param_type => {
+                Rule::port_or_param_type => {
                     port_or_param_type_str = Some(inner.as_str());
                 }
-                aadlight_parser::Rule::access_direction => {
+                Rule::access_direction => {
                     access_direction = match inner.as_str() {
                         "provides" => Some(AccessDirection::Provides),
                         "requires" => Some(AccessDirection::Requires),
                         _ => None,
                     };
                 }
-                aadlight_parser::Rule::access_type => {
+                Rule::access_type => {
                     access_type_str = inner.as_str().to_string();
                 }
-                aadlight_parser::Rule::qualified_identifier => {
+                Rule::qualified_identifier => {
                     classifier_qname = Some(inner.as_str().to_string());
                 }
                 _ => {
@@ -891,14 +892,14 @@ impl AADLTransformer {
         panic!("Unknown feature declaration format");
     }
 
-    pub fn transform_properties_clause(pair: Pair<aadlight_parser::Rule>) -> PropertyClause {
+    pub fn transform_properties_clause(pair: Pair<Rule>) -> PropertyClause {
         if pair.as_str().contains("none") {
             return PropertyClause::ExplicitNone;
         }
         
         let mut properties = Vec::new();
         for inner in pair.into_inner() {
-            if inner.as_rule() == aadlight_parser::Rule::property_association {
+            if inner.as_rule() == Rule::property_association {
                 properties.push(Self::transform_property_association(inner));
             }
         }
@@ -910,7 +911,7 @@ impl AADLTransformer {
         }
     }
     
-    pub fn transform_property_association(pair: Pair<aadlight_parser::Rule>) -> Property {
+    pub fn transform_property_association(pair: Pair<Rule>) -> Property {
         // println!("=== 调试 property ===");
         // println!("pair = Rule::{:?}, text = {}", pair.as_rule(), pair.as_str());
         // for (i, inner) in pair.clone().into_inner().enumerate() {
@@ -920,11 +921,11 @@ impl AADLTransformer {
         let mut inner_iter = pair.into_inner().peekable();
 
         // 检查是否有属性集前缀 (property_set::property_name)
-        let (property_set, identifier) = if inner_iter.peek().map(|p| p.as_rule()) == Some(aadlight_parser::Rule::identifier) {
+        let (property_set, identifier) = if inner_iter.peek().map(|p| p.as_rule()) == Some(Rule::identifier) {
             let first_identifier = extract_identifier(inner_iter.next().unwrap());
             
             // 检查下一个元素是否是identifier
-            if inner_iter.peek().map(|p| p.as_rule()) == Some(aadlight_parser::Rule::identifier) {
+            if inner_iter.peek().map(|p| p.as_rule()) == Some(Rule::identifier) {
                 let second_identifier = extract_identifier(inner_iter.next().unwrap());
                 (Some(first_identifier), second_identifier)
             } else {
@@ -943,7 +944,7 @@ impl AADLTransformer {
         };
         // === 处理 constant 标记 ===
         let mut is_constant = false;
-        if inner_iter.peek().map(|p| p.as_rule()) == Some(aadlight_parser::Rule::constant) {
+        if inner_iter.peek().map(|p| p.as_rule()) == Some(Rule::constant) {
             is_constant = true;
             inner_iter.next(); // 消耗 constant
         }
@@ -972,7 +973,7 @@ impl AADLTransformer {
         }
     }
 
-    pub fn transform_property_value(pair: Pair<aadlight_parser::Rule>) -> PropertyValue {
+    pub fn transform_property_value(pair: Pair<Rule>) -> PropertyValue {
         // println!("=== 调试 property_value ===");
         // println!("pair = Rule::{:?}, text = {}", pair.as_rule(), pair.as_str());
         // for (i, inner) in pair.clone().into_inner().enumerate() {
@@ -982,20 +983,20 @@ impl AADLTransformer {
         let inner = pair.into_inner().next().unwrap();
     
         match inner.as_rule() {
-            aadlight_parser::Rule::apply_value => {
+            Rule::apply_value => {
                 let mut parts = inner.into_inner();
                 let number = parts.next().unwrap().as_str().trim().to_string();
                 let applies_to = parts.next().unwrap().as_str().trim().to_string();
                 PropertyValue::Single(PropertyExpression::Apply(ApplyTerm { number, applies_to }))
             }
-            aadlight_parser::Rule::range_value => {
+            Rule::range_value => {
                 let mut parts = inner.into_inner();
                 let lower_val = extract_identifier(parts.next().unwrap());
-                let lower_unit = if parts.peek().is_some_and(|p| p.as_rule() == aadlight_parser::Rule::unit) {
+                let lower_unit = if parts.peek().is_some_and(|p| p.as_rule() == Rule::unit) {
                     Some(parts.next().unwrap().as_str().trim().to_string())
                 } else { None };
                 let upper_val = extract_identifier(parts.next().unwrap());
-                let upper_unit = if parts.peek().is_some_and(|p| p.as_rule() == aadlight_parser::Rule::unit) {
+                let upper_unit = if parts.peek().is_some_and(|p| p.as_rule() == Rule::unit) {
                     Some(parts.next().unwrap().as_str().trim().to_string())
                 } else { None };
                 
@@ -1004,7 +1005,7 @@ impl AADLTransformer {
                     upper: StringWithUnit { value: upper_val, unit: upper_unit },
                 }))
             }
-            aadlight_parser::Rule::list_value => {
+            Rule::list_value => {
                 // 你的原代码逻辑...
                 let mut elements = Vec::new();
                 for item in inner.into_inner() {
@@ -1015,19 +1016,19 @@ impl AADLTransformer {
                 }
                 PropertyValue::List(elements)
             }
-            aadlight_parser::Rule::reference_value => {
+            Rule::reference_value => {
                 let mut ref_parts = inner.into_inner();
                 let referenced_id = extract_identifier(ref_parts.next().unwrap());
                 let mut applies_to = None;
                 for part in ref_parts {
-                    if part.as_rule() == aadlight_parser::Rule::qualified_identifier {
+                    if part.as_rule() == Rule::qualified_identifier {
                         applies_to = Some(extract_identifier(part));
                         break;
                     }
                 }
                 PropertyValue::Single(PropertyExpression::Reference(ReferenceTerm { identifier: referenced_id, applies_to }))
             }
-            aadlight_parser::Rule::component_classifier_value => {
+            Rule::component_classifier_value => {
                 let mut inner_iter = inner.into_inner();
                 let qname = inner_iter.next().unwrap().as_str().to_string();
                 let parts: Vec<&str> = qname.split("::").collect();
@@ -1039,11 +1040,11 @@ impl AADLTransformer {
                 PropertyValue::Single(PropertyExpression::ComponentClassifier(ComponentClassifierTerm { unique_component_classifier_reference: unique_ref }))
             }
 
-            aadlight_parser::Rule::literal_value => {
+            Rule::literal_value => {
                 let val_inner = inner.into_inner().next().unwrap();
                 match val_inner.as_rule() {
                     // 数值类型 (Number + Optional Unit)
-                    aadlight_parser::Rule::numeric_literal => {
+                    Rule::numeric_literal => {
                         let mut parts = val_inner.into_inner();
                         let number_pair = parts.next().unwrap(); // number rule
                         let unit = parts.next().map(|u| u.as_str().to_string()); // unit rule
@@ -1051,7 +1052,7 @@ impl AADLTransformer {
                         // 解析 number
                         let mut num_parts = number_pair.into_inner().peekable();
                         let sign = match num_parts.peek() {
-                            Some(p) if p.as_rule() == aadlight_parser::Rule::sign => {
+                            Some(p) if p.as_rule() == Rule::sign => {
                                 match num_parts.next().unwrap().as_str() {
                                     "+" => Some(Sign::Plus), "-" => Some(Sign::Minus), _ => None,
                                 }
@@ -1075,19 +1076,19 @@ impl AADLTransformer {
                         }
                     }
                     // 字符串
-                    aadlight_parser::Rule::string_literal => {
+                    Rule::string_literal => {
                         // strip_string_literal 实现：去头去尾的引号
                         let raw = val_inner.as_str();
                         let value = raw[1..raw.len()-1].to_string(); 
                         PropertyValue::Single(PropertyExpression::String(StringTerm::Literal(value)))
                     }
                     // 布尔
-                    aadlight_parser::Rule::boolean => {
+                    Rule::boolean => {
                         let val = val_inner.as_str() == "true";
                         PropertyValue::Single(PropertyExpression::Boolean(BooleanTerm::Literal(val)))
                     }
                     // 枚举 (AADL预定义)
-                    aadlight_parser::Rule::enum_value => {
+                    Rule::enum_value => {
                         PropertyValue::Single(PropertyExpression::String(StringTerm::Literal(val_inner.as_str().to_string())))
                     }
                     _ => panic!("Unknown literal inner: {:?}", val_inner.as_rule()),
@@ -1095,7 +1096,7 @@ impl AADLTransformer {
             }
 
             // 2. 处理 Record ([ x => v; ])
-            aadlight_parser::Rule::record_value => {
+            Rule::record_value => {
                 let mut fields = Vec::new();
                 for field_pair in inner.into_inner() { // 遍历 record_field
                     let mut field_parts = field_pair.into_inner();
@@ -1107,12 +1108,12 @@ impl AADLTransformer {
                 PropertyValue::Single(PropertyExpression::Record(RecordTerm { fields: fields }))
             }
 
-            aadlight_parser::Rule::computed_value => {
+            Rule::computed_value => {
                 let func_name = extract_identifier(inner.into_inner().next().unwrap());
                 PropertyValue::Single(PropertyExpression::Computed(func_name))
             }
 
-            aadlight_parser::Rule::property_term => {
+            Rule::property_term => {
                 let qname = inner.as_str().to_string();
                 // 这里简单解析是否包含 "::"
                 let parts: Vec<&str> = qname.split("::").collect();
@@ -1134,12 +1135,12 @@ impl AADLTransformer {
         }
     }
 
-    // pub fn transform_annexes_clause(pair: Pair<aadlight_parser::Rule>) -> Vec<AnnexSubclause> {
+    // pub fn transform_annexes_clause(pair: Pair<Rule>) -> Vec<AnnexSubclause> {
     //     //use crate::transform_annex::transform_annexes_clause as transform_annexes;
     //     //transform_annexes(pair)
     // }
     
-    pub fn transform_component_implementation(pair: Pair<aadlight_parser::Rule>) -> ComponentImplementation {
+    pub fn transform_component_implementation(pair: Pair<Rule>) -> ComponentImplementation {
         // println!("=== 调试 implementation ===");
         // println!("pair = Rule::{:?}------text = {}", pair.as_rule(),pair.as_str());
         // for (i, inner) in pair.clone().into_inner().enumerate() {
@@ -1178,22 +1179,22 @@ impl AADLTransformer {
         
         for inner in inner_iter {
             match inner.as_rule() {
-                aadlight_parser::Rule::prototypes => {
+                Rule::prototypes => {
                     prototypes = Self::transform_prototypes_clause(inner);
                 }
-                aadlight_parser::Rule::subcomponents => {
+                Rule::subcomponents => {
                     subcomponents = Self::transform_subcomponents_clause(inner);
                 }
-                aadlight_parser::Rule::calls => {
+                Rule::calls => {
                     calls = Self::transform_calls_clause(inner);
                 }
-                aadlight_parser::Rule::connections => {
+                Rule::connections => {
                     connections = Self::transform_connections_clause(inner);
                 }
-                aadlight_parser::Rule::properties => {
+                Rule::properties => {
                     properties = Self::transform_properties_clause(inner);
                 }
-                aadlight_parser::Rule::annex_subclause => {
+                Rule::annex_subclause => {
                     if let Some(annex) = transform_annex_subclause(inner) {
                         annexes.push(annex);
                     }
@@ -1215,7 +1216,7 @@ impl AADLTransformer {
         }
     }
     
-    pub fn transform_subcomponents_clause(pair: Pair<aadlight_parser::Rule>) -> SubcomponentClause {
+    pub fn transform_subcomponents_clause(pair: Pair<Rule>) -> SubcomponentClause {
         // println!("=== 调试 subcomponents ===");
         // println!("pair = Rule::{:?}------text = {}", pair.as_rule(),pair.as_str());
         // for (i, inner) in pair.clone().into_inner().enumerate() {
@@ -1229,7 +1230,7 @@ impl AADLTransformer {
         
         let mut subcomponents = Vec::new();
         for inner in pair.into_inner() {
-            if inner.as_rule() == aadlight_parser::Rule::subcomponent {
+            if inner.as_rule() == Rule::subcomponent {
                 subcomponents.push(Self::transform_subcomponent(inner));
             }
         }
@@ -1241,11 +1242,11 @@ impl AADLTransformer {
         }
     }
     
-    fn transform_array_spec(pair: Pair<aadlight_parser::Rule>) -> ArraySpec {
+    fn transform_array_spec(pair: Pair<Rule>) -> ArraySpec {
         let mut dimensions = Vec::new();
         
         for inner in pair.into_inner() {
-            if inner.as_rule() == aadlight_parser::Rule::dimension {
+            if inner.as_rule() == Rule::dimension {
                 let mut dim_inner = inner.into_inner();
                 
                 // 尝试获取 number
@@ -1274,7 +1275,7 @@ impl AADLTransformer {
         }
     }
 
-    pub fn transform_subcomponent(pair: Pair<aadlight_parser::Rule>) -> Subcomponent {
+    pub fn transform_subcomponent(pair: Pair<Rule>) -> Subcomponent {
         let mut inner_iter = pair.into_inner();
         let identifier = extract_identifier(inner_iter.next().unwrap());
         //let _colon = inner_iter.next();
@@ -1318,15 +1319,15 @@ impl AADLTransformer {
         // 遍历剩余的 token
         for part in inner_iter {
             match part.as_rule() {
-                aadlight_parser::Rule::array_spec => {
+                Rule::array_spec => {
                     // 调用上面新写的辅助函数
                     array_spec = Some(Self::transform_array_spec(part));
                 },
-                aadlight_parser::Rule::properties => {
+                Rule::properties => {
                     // 语法规则: properties = { "properties" ~ (property_association+) }
                     // 所以我们需要进入 properties 规则内部，找到所有的 property_association
                     for prop_inner in part.into_inner() {
-                        if prop_inner.as_rule() == aadlight_parser::Rule::property_association {
+                        if prop_inner.as_rule() == Rule::property_association {
                             // 复用现有的 transform_property_association 函数
                             properties.push(Self::transform_property_association(prop_inner));
                         }
@@ -1349,7 +1350,7 @@ impl AADLTransformer {
         }
     }
     
-    pub fn transform_calls_clause(pair: Pair<aadlight_parser::Rule>) -> CallSequenceClause {
+    pub fn transform_calls_clause(pair: Pair<Rule>) -> CallSequenceClause {
 
         if pair.as_str().contains("none") {
             return CallSequenceClause::Empty;
@@ -1357,7 +1358,7 @@ impl AADLTransformer {
         
         let mut call_sequences = Vec::new();
         for inner in pair.into_inner() {
-            if inner.as_rule() == aadlight_parser::Rule::call_sequence {
+            if inner.as_rule() == Rule::call_sequence {
                 call_sequences.push(Self::transform_call_sequence(inner));
             }
         }
@@ -1369,18 +1370,18 @@ impl AADLTransformer {
         }
     }
     
-    fn transform_in_modes(pair: Pair<aadlight_parser::Rule>) -> Vec<String> {
+    fn transform_in_modes(pair: Pair<Rule>) -> Vec<String> {
         let mut modes = Vec::new();
         // 遍历内部，提取所有 identifier
         for inner in pair.into_inner() {
-            if inner.as_rule() == aadlight_parser::Rule::identifier {
+            if inner.as_rule() == Rule::identifier {
                 modes.push(extract_identifier(inner));
             }
         }
         modes
     }
 
-    pub fn transform_call_sequence(pair: Pair<aadlight_parser::Rule>) -> CallSequence {
+    pub fn transform_call_sequence(pair: Pair<Rule>) -> CallSequence {
         // println!("=== 调试 calls_sequence ===");
         // println!("pair = Rule::{:?}------text = {}", pair.as_rule(),pair.as_str());
         // for (i, inner) in pair.clone().into_inner().enumerate() {
@@ -1398,26 +1399,26 @@ impl AADLTransformer {
         let mut in_modes = None;
     
         // for inner in inner_iter {
-        //     if inner.as_rule() == aadlight_parser::Rule::subprogram_call {
+        //     if inner.as_rule() == Rule::subprogram_call {
         //         calls.push(Self::transform_subprogram_call(inner));
         //     }
         // }
         
         for part in inner_iter {
             match part.as_rule() {
-                aadlight_parser::Rule::subprogram_call => {
+                Rule::subprogram_call => {
                     // 处理子程序调用
                     calls.push(Self::transform_subprogram_call(part));
                 },
-                aadlight_parser::Rule::properties => {
+                Rule::properties => {
                     // 处理属性集
                     for prop_inner in part.into_inner() {
-                        if prop_inner.as_rule() == aadlight_parser::Rule::property_association {
+                        if prop_inner.as_rule() == Rule::property_association {
                             properties.push(Self::transform_property_association(prop_inner));
                         }
                     }
                 },
-                aadlight_parser::Rule::in_modes => {
+                Rule::in_modes => {
                     // 处理模式约束
                     in_modes = Some(Self::transform_in_modes(part));
                 },
@@ -1437,7 +1438,7 @@ impl AADLTransformer {
         }
     }
     
-    pub fn transform_subprogram_call(pair: Pair<aadlight_parser::Rule>) -> SubprogramCall {
+    pub fn transform_subprogram_call(pair: Pair<Rule>) -> SubprogramCall {
         // println!("=== 调试 subprogram_call ===");
         // println!("pair = Rule::{:?}------text = {}", pair.as_rule(),pair.as_str());
         // for (i, inner) in pair.clone().into_inner().enumerate() {
@@ -1473,7 +1474,7 @@ impl AADLTransformer {
 
         // 遍历剩余的 token
         for part in inner_iter {
-            if part.as_rule() == aadlight_parser::Rule::property_association {
+            if part.as_rule() == Rule::property_association {
                 properties.push(Self::transform_property_association(part));
             }
         }
@@ -1486,14 +1487,14 @@ impl AADLTransformer {
         }
     }
     
-    pub fn transform_connections_clause(pair: Pair<aadlight_parser::Rule>) -> ConnectionClause {
+    pub fn transform_connections_clause(pair: Pair<Rule>) -> ConnectionClause {
         if pair.as_str().contains("none") {
             return ConnectionClause::Empty;
         }
         
         let mut connections = Vec::new();
         for inner in pair.into_inner() {
-            if inner.as_rule() == aadlight_parser::Rule::connection {
+            if inner.as_rule() == Rule::connection {
                 connections.push(Self::transform_connection(inner));
             }
         }
@@ -1505,7 +1506,7 @@ impl AADLTransformer {
         }
     }
     
-    pub fn transform_connection(pair: Pair<aadlight_parser::Rule>) -> Connection {
+    pub fn transform_connection(pair: Pair<Rule>) -> Connection {
         // println!("=== 调试 connection ===");
         // println!("pair = Rule::{:?}, text = {}", pair.as_rule(), pair.as_str());
 
@@ -1578,7 +1579,7 @@ impl AADLTransformer {
         }
     }
     
-    pub fn transform_port_reference(pair: Pair<aadlight_parser::Rule>) -> PortEndpoint {
+    pub fn transform_port_reference(pair: Pair<Rule>) -> PortEndpoint {
         let reference = pair.as_str().trim();
         if reference.contains('.') {
             let mut parts = reference.split('.');
@@ -1591,7 +1592,7 @@ impl AADLTransformer {
         }
     }
 
-    pub fn transform_parameterport_reference(pair: Pair<aadlight_parser::Rule>) -> ParameterEndpoint {
+    pub fn transform_parameterport_reference(pair: Pair<Rule>) -> ParameterEndpoint {
         let reference = pair.as_str().trim();
         if reference.contains('.') {
             let mut parts = reference.split('.');
@@ -1605,7 +1606,7 @@ impl AADLTransformer {
         }
     }
 
-    pub fn transform_access_reference(pair: Pair<aadlight_parser::Rule>) -> AccessEndpoint {
+    pub fn transform_access_reference(pair: Pair<Rule>) -> AccessEndpoint {
         let reference = pair.as_str().trim();
         if reference.contains('.') {
             let mut parts = reference.split('.');
