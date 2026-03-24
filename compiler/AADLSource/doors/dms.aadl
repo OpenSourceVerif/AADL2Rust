@@ -1,0 +1,419 @@
+package DMS
+public
+  with Base_Types;
+
+
+  -----------------------------------------------------------------------------
+  -- 1. 模拟设备的线程 (原 Device)
+  -----------------------------------------------------------------------------
+
+  thread door_sim
+    features
+      handle_position: out data port Base_Types::boolean;
+      closed: out data port Base_Types::boolean;
+      latched: out data port Base_Types::boolean;
+      locked: out data port Base_Types::boolean;
+      swivel    : in data port Base_Types::boolean;
+      de_arrest : in data port Base_Types::boolean;
+      lock : in data port Base_Types::boolean;
+      warn_diff_pres: in data port Base_Types::boolean;
+      warn_slide: in data port Base_Types::boolean;
+  properties
+    Dispatch_Protocol => Periodic;
+    Period => 10 ms;
+    Compute_Execution_Time => 1 ms .. 2 ms;
+  end door_sim;
+
+  thread implementation door_sim.imp
+    annex Behavior_Specification {**
+      states
+        s0 : initial complete state;
+      transitions
+        s0 -[ on dispatch ]-> s0 {
+          computation(1ms);
+          handle_position := true;
+          closed := false;
+          latched := false;
+          locked:= false};
+
+        s0 -[ on dispatch ]-> s0 {
+          computation(1ms);
+          handle_position := false;
+          closed := true;
+          latched := false;
+          locked:= false};
+
+        s0 -[ on dispatch ]-> s0 {
+          computation(1ms);
+          handle_position := false;
+          closed := true;
+          latched := true;
+          locked:= false};
+
+        s0 -[ on dispatch ]-> s0 {
+          computation(1ms);
+          handle_position := false;
+          closed := true;
+          latched := true;
+          locked:= true};
+**};
+  end door_sim.imp;
+
+  thread LGS_sim
+    features
+      in_flight1: out data port Base_Types::boolean;
+      on_ground1: out data port Base_Types::boolean;
+      engine_running1:  out data port Base_Types::boolean;
+      emergency_evacuation1 : out data port Base_Types::boolean;
+
+      in_flight2: out data port Base_Types::boolean;
+      on_ground2: out data port Base_Types::boolean;
+      engine_running2:  out data port Base_Types::boolean;
+      emergency_evacuation2 : out data port Base_Types::boolean;
+  properties
+    Dispatch_Protocol => Periodic;
+    Period => 10 ms;
+    Compute_Execution_Time => 1 ms .. 2 ms;
+  end LGS_sim;
+
+  thread implementation LGS_sim.imp
+    annex Behavior_Specification {**
+      states
+        s0 : initial complete state;
+      transitions
+        s0 -[ on dispatch ]-> s0 {
+          computation(1ms);
+          in_flight1 := false;
+          on_ground1 := true;
+          engine_running1:= false;
+          emergency_evacuation1:= false;
+
+          in_flight2 := false;
+          on_ground2 := true;
+          engine_running2:= false;
+          emergency_evacuation2:= false
+        };
+        s0 -[ on dispatch ]-> s0 {
+          computation(1ms);
+          in_flight1 := false;
+          on_ground1 := true;
+          engine_running1:= true;
+          emergency_evacuation1:= false;
+
+          in_flight2 := false;
+          on_ground2 := true;
+          engine_running2:= true;
+          emergency_evacuation2:= false
+        };
+
+        s0 -[ on dispatch ]-> s0 {
+          computation(1ms);
+          in_flight1 := true;
+          on_ground1 := false;
+          engine_running1:= true;
+          emergency_evacuation1:= false;
+          in_flight2 := true;
+          on_ground2 := false;
+          engine_running2:= true;
+          emergency_evacuation2:= false
+        };
+**};
+  end LGS_sim.imp;
+
+  thread DPS_sim
+    features
+      dps1: out data port Base_Types::integer;
+      dps2: out data port Base_Types::integer;
+  properties
+    Dispatch_Protocol => Periodic;
+    Period => 10 ms;
+    Compute_Execution_Time => 1 ms .. 2 ms;
+  end DPS_sim;
+
+  thread implementation DPS_sim.imp
+    annex Behavior_Specification {**
+      states
+        s0 : initial complete state;
+      transitions
+        s0 -[ on dispatch ]-> s0 {
+          computation(1ms);
+          dps1 := 0;
+          dps2 := 0};
+        s0 -[ on dispatch ]-> s0 {
+          computation(1ms);
+          dps1 := 4;
+          dps2 := 4};
+**};
+  end DPS_sim.imp;
+
+  thread OCU_sim
+    features
+      cll: in data port Base_Types::boolean;
+  properties
+    Dispatch_Protocol => Periodic;
+    Period => 10 ms;
+  end OCU_sim;
+
+  thread implementation OCU_sim.imp
+  end OCU_sim.imp;
+
+  thread FWS_sim
+    features
+      wrn_door1: in data port Base_Types::boolean;
+      wrn_door2: in data port Base_Types::boolean;
+  properties
+    Dispatch_Protocol => Periodic;
+    Period => 10 ms;
+  end FWS_sim;
+
+  thread implementation FWS_sim.imp
+  end FWS_sim.imp;
+
+  thread ECAM_sim
+    features
+      info_door1: in data port Base_Types::boolean;
+      info_door2: in data port Base_Types::boolean;
+  properties
+    Dispatch_Protocol => Periodic;
+    Period => 10 ms;
+  end ECAM_sim;
+
+  thread implementation ECAM_sim.imp
+  end ECAM_sim.imp;
+
+
+  -----------------------------------------------------------------------------
+  -- 2. 逻辑控制线程
+  -----------------------------------------------------------------------------
+
+  thread door_handler
+    features
+      -- door device
+      handle_position: in data port Base_Types::boolean; 
+      closed: in data port Base_Types::boolean; 
+      latched: in data port Base_Types::boolean;
+      locked: in data port Base_Types::boolean; 
+      swivel : out data port Base_Types::boolean; 
+      de_arrest : out data port Base_Types::boolean; 
+      lock : out data port Base_Types::boolean; 
+      warn_diff_pres: out data port Base_Types::boolean; 
+      warn_slide: out data port Base_Types::boolean; 
+
+      -- LGS device
+      in_flight: in data port Base_Types::boolean;
+      on_ground: in data port Base_Types::boolean;
+      engine_running: in data port Base_Types::boolean;
+      emergency_evacuation : in data port Base_Types::boolean;
+
+      -- DPS device
+      dps: in data port Base_Types::integer;
+
+      -- mix door thread
+      door_locked: out data port Base_Types::boolean;
+
+      -- FWS device
+      warning_info: out data port Base_Types::boolean;
+
+      -- ECAM device
+      ecam_info: out data port Base_Types::boolean;
+  end door_handler;
+
+  thread implementation door_handler.imp
+    properties
+      Dispatch_Protocol => Periodic;
+      Compute_Execution_Time => 0 ms .. 20 ms;
+      Period => 50 Ms;
+
+    annex Behavior_Specification {**
+      states
+        sd_opened : initial complete final state;
+        sd_closed, sd_latch, sd_latched, sd_lock, sd_locked, sd_armed  : complete state;
+        sa_inflight, sa_landing : complete state;
+        sd_warning, sa_evacuation : complete final state;
+        s1, s2, s3, s4, s5, s6, s7 : state;
+      transitions
+       sd_opened -[on dispatch]-> s1 {
+          door_locked := closed and latched and locked
+       };
+       s1 -[handle_position]-> sd_opened;
+
+       s1 -[not handle_position and closed and on_ground and not engine_running]-> sd_latch {
+       swivel := true
+       };
+       sd_latch -[on dispatch ]-> s2 {
+          door_locked := closed and latched and locked
+       };
+
+       s2 -[closed and latched and on_ground and not engine_running]-> sd_lock {
+       lock := true
+       };
+       sd_lock -[on dispatch ]-> s3 {
+          door_locked := closed and latched and locked
+       };
+       s3 -[not closed or not latched or not locked]-> sd_warning {
+          warning_info := true
+       };
+
+       s3 -[closed and latched and locked and on_ground and not engine_running]-> sd_locked {
+          ecam_info := true
+       };
+
+       sd_locked -[on dispatch ]-> s4
+          {door_locked := closed and latched and locked
+       };
+
+       s4 -[closed and latched and locked and on_ground and engine_running]-> sd_armed {
+          warn_slide := true
+       };
+       sd_armed -[on dispatch ]-> s5
+          {door_locked := closed and latched and locked
+       };
+
+       -- takeoff of the aircraft ==> inflight
+       s5 -[in_flight and engine_running and dps > 0]-> sa_inflight {
+          warn_diff_pres := true
+       };
+       sa_inflight -[on dispatch ]-> s6
+          {door_locked := closed and latched and locked
+       };
+       s6 -[in_flight and engine_running and dps > 0]-> sa_inflight;
+
+       s6 -[in_flight and not closed or not latched or not locked]-> sd_warning {
+          warning_info := true
+       };
+       s6 -[in_flight and handle_position]-> sd_warning {
+          warning_info := true
+       };
+       -- landing
+       s6 -[on_ground and not engine_running and dps = 0]-> sa_landing {
+          warn_diff_pres := false;
+          lock := false
+       };
+       sa_landing -[on dispatch ]-> s7
+          {door_locked := closed and latched and locked
+       };
+       s7 -[on_ground and emergency_evacuation]-> sa_evacuation {
+          warn_diff_pres := false;
+          lock := false;
+          swivel := false
+       };
+       s7 -[handle_position and not closed and not latched and not locked and
+            on_ground and not engine_running]->
+       sd_opened {
+          --new aircraft automatically disarm the sliderafts if the doors are opened from the outside.
+         de_arrest := true
+       };
+**};
+  end door_handler.imp;
+
+  thread doors_int
+    features
+      door1: in data port Base_Types::boolean;
+      door2: in data port Base_Types::boolean;
+      cll: out data port Base_Types::boolean;
+  end doors_int;
+
+  thread implementation doors_int.imp
+    properties
+      Dispatch_Protocol => Periodic;
+      Compute_Execution_Time => 0 ms .. 5 ms;
+      Period => 50 Ms;
+    annex Behavior_Specification {**
+      states
+        s0 : initial complete final state;
+      transitions
+        s0 -[ on dispatch ]-> s0 {
+          cll := door1 and door2};
+**};
+  end doors_int.imp;
+
+  -----------------------------------------------------------------------------
+  -- 3. 顶层 Process
+  -----------------------------------------------------------------------------
+  
+  process main_control_process
+  end main_control_process;
+
+  process implementation main_control_process.imp
+    subcomponents
+      -- 模拟设备 (实例化 Thread)
+      dev_door1: thread door_sim.imp;
+      dev_door2: thread door_sim.imp;
+      dev_lgs: thread LGS_sim.imp;
+      dev_dps: thread DPS_sim.imp;
+      dev_ocu: thread OCU_sim.imp;
+      dev_fws: thread FWS_sim.imp;
+      dev_ecam: thread ECAM_sim.imp;
+      
+      -- 逻辑控制 (实例化 Thread)
+      logic_door1: thread door_handler.imp;
+      logic_door2: thread door_handler.imp;
+      doors_mix: thread doors_int.imp;
+
+    connections
+      -- Door 1 连接
+      connD11: port dev_door1.handle_position -> logic_door1.handle_position;
+      connD12: port dev_door1.closed -> logic_door1.closed;
+      connD102: port dev_door1.latched -> logic_door1.latched;
+      connD13: port dev_door1.locked -> logic_door1.locked;
+      connD14: port logic_door1.swivel -> dev_door1.swivel;
+      connD15: port logic_door1.de_arrest -> dev_door1.de_arrest;
+      connD16: port logic_door1.lock -> dev_door1.lock;
+      connD17: port logic_door1.warn_diff_pres -> dev_door1.warn_diff_pres;
+      connD18: port logic_door1.warn_slide -> dev_door1.warn_slide;
+      
+      -- LGS to Door 1
+      connPD19: port dev_lgs.in_flight1 -> logic_door1.in_flight;
+      connPD110: port dev_lgs.on_ground1 -> logic_door1.on_ground;
+      connPD111: port dev_lgs.engine_running1 -> logic_door1.engine_running;
+      connPD112: port dev_lgs.emergency_evacuation1 -> logic_door1.emergency_evacuation;
+      
+      -- Logic to Indicators (Door 1)
+      connPD113: port logic_door1.ecam_info -> dev_ecam.info_door1;
+      connPD114: port logic_door1.warning_info -> dev_fws.wrn_door1;
+      
+      -- DPS to Door 1
+      connPD116: port dev_dps.dps1 -> logic_door1.dps;
+
+      -- Door 2 连接
+      connD21: port dev_door2.handle_position -> logic_door2.handle_position;
+      connD22: port dev_door2.closed -> logic_door2.closed;
+      connD202: port dev_door2.latched -> logic_door2.latched;
+      connD23: port dev_door2.locked -> logic_door2.locked;
+      connD24: port logic_door2.swivel -> dev_door2.swivel;
+      connD25: port logic_door2.de_arrest -> dev_door2.de_arrest;
+      connD26: port logic_door2.lock -> dev_door2.lock;
+      connD27: port logic_door2.warn_diff_pres -> dev_door2.warn_diff_pres;
+      connD28: port logic_door2.warn_slide -> dev_door2.warn_slide;
+
+      -- LGS to Door 2
+      connPD29: port dev_lgs.in_flight2 -> logic_door2.in_flight;
+      connPD210: port dev_lgs.on_ground2 -> logic_door2.on_ground;
+      connPD211: port dev_lgs.engine_running2 -> logic_door2.engine_running;
+      connPD212: port dev_lgs.emergency_evacuation2 -> logic_door2.emergency_evacuation;
+      
+      -- Logic to Indicators (Door 2)
+      connPD213: port logic_door2.warning_info -> dev_fws.wrn_door2;
+      connPD214: port logic_door2.ecam_info -> dev_ecam.info_door2;
+      
+      -- DPS to Door 2
+      connPD216: port dev_dps.dps2 -> logic_door2.dps;
+
+      -- Inter-thread logic connections (Door Mix)
+      connD218: port logic_door2.door_locked -> doors_mix.door2;
+      connD118: port logic_door1.door_locked -> doors_mix.door1;
+      
+      -- Mix Output
+      connMix: port doors_mix.cll -> dev_ocu.cll;
+
+  end main_control_process.imp;
+
+  system root
+  end root;
+
+  system implementation root.imp
+    subcomponents
+      main_proc: process main_control_process.imp;
+  end root.imp;
+
+end DMS;

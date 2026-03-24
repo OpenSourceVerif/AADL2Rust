@@ -145,14 +145,15 @@ frozen_ports = {
 execute_condition = {
     "otherwise" |
     "timeout" | 
-    logical_value_expression
+    // logical_value_expression
+    value_expression 
 }
 
-logical_value_expression = {
-    (unary_boolean_operator? ~ identifier) |
-    (number ~ less_than_operator ~ identifier)
-}
-less_than_operator = { "<" }
+// logical_value_expression = {
+//     (unary_boolean_operator? ~ identifier) |
+//     (number ~ less_than_operator ~ identifier)
+// }
+// less_than_operator = { "<" }
 
 
 // 行为动作（重命名以避免递归）
@@ -371,14 +372,14 @@ integer_range = {
 // 这些规则已经不再需要，使用新的表达式层次结构
 
 // 二元操作符
-binary_operator = { 
-    // 逻辑操作符
-    "and" | "or" |
-    // 比较操作符
-    "=" | "!=" | "<" | "<=" | ">" | ">=" |
-    // 算术操作符
-    "+" | "-" | "*" | "/" | "mod"
-}
+// binary_operator = { 
+//     // 逻辑操作符
+//     "and" | "or" |
+//     // 比较操作符
+//     "=" | "!=" | "<" | "<=" | ">" | ">=" |
+//     // 算术操作符
+//     "+" | "-" | "*" | "/" | "mod"
+// }
 
 // 值表达式层次结构（与ast.rs保持一致）
 // value_expression ::= relation { logical_operator relation }*
@@ -400,9 +401,10 @@ relation = {
 
 // 关系操作符
 // relational_operator ::= = | != | < | <= | > | >=
-relational_operator = { 
-    "=" | "!=" | "<" | "<=" | ">" | ">=" 
-}
+// relational_operator = { 
+//     "=" | "!=" | "<" | "<=" | ">" | ">=" 
+// }
+relational_operator = { "<=" | ">=" | "!=" | "=" | "<" | ">" }
 
 // 简单表达式
 // simple_expression ::= [ unary_adding_operator ] term { binary_adding_operator term }*

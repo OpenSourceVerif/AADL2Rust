@@ -285,27 +285,30 @@ pub fn transform_guard(pair: Pair<BARule>) -> BehaviorCondition {
     match inner.as_rule() {
         BARule::dispatch_condition => {
             // 处理 "on dispatch"
-            transform_dispatch_condition(inner)
+            // transform_dispatch_condition(inner)
+            BehaviorCondition::Dispatch(transform_dispatch_condition(inner))
         }
         BARule::execute_condition => {
             // 处理 execute_condition: unary_boolean_operator? ~ identifier
-            transform_execute_condition(inner)
+            // transform_execute_condition(inner)
+            BehaviorCondition::Execute(transform_execute_condition(inner))
         }
         _ => {
             // 默认处理
-            BehaviorCondition::Execute(DispatchConjunction {
-                not: false,
-                dispatch_triggers: vec![],
-                number: None,
-                less_than: false,
-            })
+            // BehaviorCondition::Execute(DispatchConjunction {
+            //     not: false,
+            //     dispatch_triggers: vec![],
+            //     number: None,
+            //     less_than: false,
+            // })
+            BehaviorCondition::Execute(ExecuteCondition::Otherwise)
         }
     }
 }
 
 /// 转换分发条件
 /// 处理 dispatch_condition 规则
-fn transform_dispatch_condition(pair: Pair<BARule>) -> BehaviorCondition {
+fn transform_dispatch_condition(pair: Pair<BARule>) -> DispatchCondition {
     let mut inner_iter = pair.into_inner();
     
     // 跳过 "on dispatch"
@@ -325,50 +328,178 @@ fn transform_dispatch_condition(pair: Pair<BARule>) -> BehaviorCondition {
         }
     }
     
-    BehaviorCondition::Dispatch(DispatchCondition {
+    // BehaviorCondition::Dispatch(DispatchCondition {
+    //     trigger_condition,
+    //     frozen_ports,
+    // })
+
+    // 直接返回结构体，不要 wrap
+    DispatchCondition {
         trigger_condition,
         frozen_ports,
-    })
+    }
+}
+
+fn transform_value_expression(pair: Pair<BARule>) -> ValueExpression {
+    match pair.as_rule() {
+        // 情况 1: 标准的 value_expression (包含 relation, and/or 等)
+        BARule::value_expression => {
+            let pair_debug = pair.clone(); 
+            let mut inner_iter = pair.into_inner();
+
+            // 解析第一个 relation
+            let first_relation = match inner_iter.next() {
+                Some(p) => p,
+                None => {
+                    panic!("transform_value_expression: expected at least one relation, found nothing. Pair: {:?}", pair_debug);
+                }
+            };
+            
+            let left = transform_relation(first_relation);
+            
+            let mut operations = Vec::new();
+            
+            // 处理后续的逻辑操作 (and, or, xor)
+            while let Some(logical_op) = inner_iter.next() {
+                let operator = match logical_op.as_str() {
+                    "and" => LogicalOperator::And,
+                    "or" => LogicalOperator::Or,
+                    "xor" => LogicalOperator::Xor,
+                    _ => panic!("Unknown logical operator: {}", logical_op.as_str()),
+                };
+                
+                let right_relation = inner_iter.next().unwrap();
+                let right = transform_relation(right_relation);
+                
+                operations.push(LogicalOperation { operator, right });
+            }
+            
+            ValueExpression { left, operations }
+        }
+        // 情况 2: 直接传入了 identifier (例如 "x1")
+        BARule::identifier => {
+            let name = pair.as_str().to_string();
+            let val = Value::Variable(ValueVariable::LocalVariable(name)); 
+            
+            let factor = Factor::Value(val);
+            let term = Term { left: factor, operations: vec![] };
+            let simple = SimpleExpression { sign: None, left: term, operations: vec![] };
+            let relation = Relation { left: simple, comparison: None };
+            
+            ValueExpression { left: relation, operations: vec![] }
+        }
+        // 情况 3: 直接传入了 simple_expression (例如 "1 + 2")
+        BARule::simple_expression => {
+            let simple = transform_simple_expression(pair);
+            let relation = Relation { left: simple, comparison: None };
+            ValueExpression { left: relation, operations: vec![] }
+        }
+        // 情况 4: 直接传入了 value_constant (例如 "true", "10")
+        BARule::value_constant => {
+            let constant = transform_value_constant(pair);
+            let val = Value::Constant(constant);
+            let factor = Factor::Value(val);
+            let term = Term { left: factor, operations: vec![] };
+            let simple = SimpleExpression { sign: None, left: term, operations: vec![] };
+            let relation = Relation { left: simple, comparison: None };
+            
+            ValueExpression { left: relation, operations: vec![] }
+        }
+        _ => panic!("transform_value_expression: unsupported rule {:?} (text: {})", pair.as_rule(), pair.as_str()),
+    }
 }
 
 /// 转换执行条件
 /// 处理 execute_condition 规则
-fn transform_execute_condition(pair: Pair<BARule>) -> BehaviorCondition {
-    let inner_iter = pair.into_inner();
-    let mut has_not = false;
-    let mut identifier = String::new();
-    let mut number = String::new();
-    let mut less_than = false;
-    // 遍历所有内部元素
-    for inner in inner_iter {
-        match inner.as_rule() {
-            BARule::unary_boolean_operator => {
-                has_not = true;
+fn transform_execute_condition(pair: Pair<BARule>) -> ExecuteCondition {
+    // let inner_iter = pair.into_inner();
+    // let mut has_not = false;
+    // let mut identifier = String::new();
+    // let mut number = String::new();
+    // let mut less_than = false;
+    // // 遍历所有内部元素
+    // for inner in inner_iter {
+    //     match inner.as_rule() {
+    //         BARule::unary_boolean_operator => {
+    //             has_not = true;
+    //         }
+    //         BARule::identifier => {
+    //             identifier = inner.as_str().to_string();
+    //         }
+    //         BARule::number => {
+    //             number = inner.as_str().trim().to_string();
+    //         }
+    //         BARule::less_than_operator => {
+    //             less_than = true;
+    //         }
+    //         _ => {
+    //             // 忽略其他规则
+    //         }
+    //     }
+    // }
+    
+    // // 创建 DispatchConjunction
+    // let conjunction = DispatchConjunction {
+    //     not: has_not,
+    //     dispatch_triggers: vec![DispatchTrigger::InEventPort(identifier)],
+    //     number: Some(number),
+    //     less_than,
+    // };
+    
+    // BehaviorCondition::Execute(conjunction)
+
+    let mut inner_iter = pair.clone().into_inner();
+    
+    if let Some(inner) = inner_iter.peek() {
+        let exec_cond = match inner.as_rule() {
+            // 情况 1: 标准的 value_expression
+            BARule::value_expression => {
+                let expr = transform_value_expression(inner);
+                ExecuteCondition::LogicalExpression(expr)
             }
+            
+            // 情况 2: 直接是 identifier (例如 "x1")
             BARule::identifier => {
-                identifier = inner.as_str().to_string();
+                let name = inner.as_str().to_string();
+                // 手动构造 ValueExpression
+                let val = Value::Variable(ValueVariable::LocalVariable(name));
+                let factor = Factor::Value(val);
+                let term = Term { left: factor, operations: vec![] };
+                let simple = SimpleExpression { sign: None, left: term, operations: vec![] };
+                let relation = Relation { left: simple, comparison: None };
+                let value_expr = ValueExpression { left: relation, operations: vec![] };
+                
+                ExecuteCondition::LogicalExpression(value_expr)
             }
-            BARule::number => {
-                number = inner.as_str().trim().to_string();
+            
+            // 情况 3: 直接是 simple_expression (例如 "x1 + 1")
+            BARule::simple_expression => {
+                let simple = transform_simple_expression(inner);
+                let relation = Relation { left: simple, comparison: None };
+                let value_expr = ValueExpression { left: relation, operations: vec![] };
+                
+                ExecuteCondition::LogicalExpression(value_expr)
             }
-            BARule::less_than_operator => {
-                less_than = true;
+
+            // 情况 4: 直接是 relation (例如 "x1 < 10")
+            BARule::relation => {
+                let relation = transform_relation(inner);
+                let value_expr = ValueExpression { left: relation, operations: vec![] };
+                
+                ExecuteCondition::LogicalExpression(value_expr)
             }
-            _ => {
-                // 忽略其他规则
-            }
+
+            _ => unreachable!("Unexpected rule inside execute_condition: {:?} (content: {})", inner.as_rule(), inner.as_str()),
+        };
+        exec_cond
+    } else {
+        let text = pair.as_str().trim();
+        match text {
+            "otherwise" => ExecuteCondition::Otherwise,
+            "timeout" => ExecuteCondition::Timeout,
+            _ => unreachable!("Unexpected text in execute_condition: {}", text),
         }
     }
-    
-    // 创建 DispatchConjunction
-    let conjunction = DispatchConjunction {
-        not: has_not,
-        dispatch_triggers: vec![DispatchTrigger::InEventPort(identifier)],
-        number: Some(number),
-        less_than,
-    };
-    
-    BehaviorCondition::Execute(conjunction)
 }
 
 /// 转换分发触发条件
@@ -799,31 +930,39 @@ pub fn transform_do_until_statement(_pair: Pair<BARule>) -> DoUntilStatement {
 
 /// 转换行为表达式
 /// 处理 behavior_expression 规则
+// pub fn transform_behavior_expression(pair: Pair<BARule>) -> ValueExpression {
+//     // behavior_expression = value_expression
+//     // value_expression = relation ~ (logical_operator ~ relation)*
+//     let mut inner_iter = pair.into_inner().next().unwrap().into_inner();//这里需要深入一层
+//     let first_relation = inner_iter.next().unwrap();
+    
+//     let left = transform_relation(first_relation);
+//     let mut operations = Vec::new();
+    
+//     // 处理后续的逻辑操作
+//     while let Some(logical_op) = inner_iter.next() {
+//         let operator = match logical_op.as_str() {
+//             "and" => LogicalOperator::And,
+//             "or" => LogicalOperator::Or,
+//             "xor" => LogicalOperator::Xor,
+//             _ => panic!("Unknown logical operator: {}", logical_op.as_str()),
+//         };
+        
+//         let right_relation = inner_iter.next().unwrap();
+//         let right = transform_relation(right_relation);
+        
+//         operations.push(LogicalOperation { operator, right });
+//     }
+    
+//     ValueExpression { left, operations }
+// }
 pub fn transform_behavior_expression(pair: Pair<BARule>) -> ValueExpression {
-    // behavior_expression = value_expression
-    // value_expression = relation ~ (logical_operator ~ relation)*
-    let mut inner_iter = pair.into_inner().next().unwrap().into_inner();//这里需要深入一层
-    let first_relation = inner_iter.next().unwrap();
+    // behavior_expression = { value_expression }
+    // 获取内部的 value_expression pair
+    let inner = pair.into_inner().next().unwrap();
     
-    let left = transform_relation(first_relation);
-    let mut operations = Vec::new();
-    
-    // 处理后续的逻辑操作
-    while let Some(logical_op) = inner_iter.next() {
-        let operator = match logical_op.as_str() {
-            "and" => LogicalOperator::And,
-            "or" => LogicalOperator::Or,
-            "xor" => LogicalOperator::Xor,
-            _ => panic!("Unknown logical operator: {}", logical_op.as_str()),
-        };
-        
-        let right_relation = inner_iter.next().unwrap();
-        let right = transform_relation(right_relation);
-        
-        operations.push(LogicalOperation { operator, right });
-    }
-    
-    ValueExpression { left, operations }
+    // 调用通用解析函数
+    transform_value_expression(inner)
 }
 
 fn transform_relation(pair: Pair<BARule>) -> Relation {
@@ -1018,19 +1157,26 @@ fn transform_value(pair: Pair<BARule>) -> Value {
         BARule::value_variable => {
             Value::Variable(transform_value_variable(inner))
         }
-        BARule::simple_expression => {
+        BARule::value_expression => {
             // 处理括号表达式: (simple_expression)
-            let expr = transform_simple_expression(inner);
+            // let expr = transform_simple_expression(inner);
+            let expr = transform_value_expression(inner);
             // 注意：这里需要将 SimpleExpression 转换为 ValueExpression
             // 由于 ValueExpression 需要 Relation，我们需要创建一个简单的转换
-            let relation = Relation {
-                left: expr,
-                comparison: None,
-            };
-            let value_expr = ValueExpression {
-                left: relation,
-                operations: Vec::new(),
-            };
+            // let relation = Relation {
+            //     left: expr,
+            //     comparison: None,
+            // };
+            // let value_expr = ValueExpression {
+            //     left: relation,
+            //     operations: Vec::new(),
+            // };
+            Value::Expression(Box::new(expr))
+        }
+        BARule::simple_expression => {
+            let simple = transform_simple_expression(inner);
+            let relation = Relation { left: simple, comparison: None };
+            let value_expr = ValueExpression { left: relation, operations: vec![] };
             Value::Expression(Box::new(value_expr))
         }
         _ => panic!("Unknown value rule: {:?}", inner.as_rule()),

@@ -302,9 +302,9 @@ impl AnnexConverter {
                 }
             }
             BehaviorCondition::Execute(execute_cond) => {
-                for trigger in &execute_cond.dispatch_triggers {
-                    self.extract_port_from_trigger(trigger, ports);
-                }
+                // for trigger in &execute_cond.dispatch_triggers {
+                //     self.extract_port_from_trigger(trigger, ports);
+                // }
             }
         }
     }
@@ -460,10 +460,16 @@ impl AnnexConverter {
                 }
                 BehaviorCondition::Execute(execute_cond) => {
                     // 处理执行条件，将端口条件作为guard
-                    if !execute_cond.dispatch_triggers.is_empty() {
-                        guard = Some(self.generate_guard_condition(execute_cond));
-                        // 记录这个状态有条件判断，需要添加默认分支
-                        self.states_with_conditions.insert(source_state.to_string());
+                    // if !execute_cond.dispatch_triggers.is_empty() {
+                    //     guard = Some(self.generate_guard_condition(execute_cond));
+                    //     // 记录这个状态有条件判断，需要添加默认分支
+                    //     self.states_with_conditions.insert(source_state.to_string());
+                    // }
+                    if let BehaviorCondition::Execute(execute_cond) = &condition {
+                        // 检查是否不是 Otherwise
+                        if !matches!(execute_cond, ExecuteCondition::Otherwise) {
+                            guard = Some(self.generate_guard_condition(execute_cond));
+                        }
                     }
                     
                     // 状态转换
@@ -511,78 +517,96 @@ impl AnnexConverter {
     }
 
     /// 生成守卫条件表达式
-    fn generate_guard_condition(&self, execute_cond: &DispatchConjunction) -> Expr {
-        if execute_cond.dispatch_triggers.is_empty() {
-            // 无条件，根据not字段返回true或false
-            Expr::Literal(Literal::Bool(!execute_cond.not))
-        } else {
-            // 有端口条件，生成检查表达式
-            let mut conditions = Vec::new();
-            let not_flag = execute_cond.not;
-            let parsed_number = execute_cond.number.as_ref().and_then(|num_str| {
-                if let Ok(int_val) = num_str.parse::<i64>() {
-                    Some(Literal::Int(int_val))
-                } else if let Ok(float_val) = num_str.parse::<f64>() {
-                    Some(Literal::Float(float_val))
-                } else {
-                    None
-                }
-            });
-            let use_less_than = execute_cond.less_than && parsed_number.is_some();
+    // fn generate_guard_condition(&self, execute_cond: &DispatchConjunction) -> Expr {
+    //     if execute_cond.dispatch_triggers.is_empty() {
+    //         // 无条件，根据not字段返回true或false
+    //         Expr::Literal(Literal::Bool(!execute_cond.not))
+    //     } else {
+    //         // 有端口条件，生成检查表达式
+    //         let mut conditions = Vec::new();
+    //         let not_flag = execute_cond.not;
+    //         let parsed_number = execute_cond.number.as_ref().and_then(|num_str| {
+    //             if let Ok(int_val) = num_str.parse::<i64>() {
+    //                 Some(Literal::Int(int_val))
+    //             } else if let Ok(float_val) = num_str.parse::<f64>() {
+    //                 Some(Literal::Float(float_val))
+    //             } else {
+    //                 None
+    //             }
+    //         });
+    //         let use_less_than = execute_cond.less_than && parsed_number.is_some();
             
-            for trigger in &execute_cond.dispatch_triggers {
-                match trigger {
-                    DispatchTrigger::InEventPort(port_name) => {
-                        let port_var = port_name.to_lowercase().to_string();
-                        let mut condition = if use_less_than {
-                            let number_literal = parsed_number.as_ref().unwrap().clone();
-                            Expr::BinaryOp(
-                                Box::new(Expr::Literal(number_literal)),
-                                "<".to_string(),
-                                Box::new(Expr::Ident(port_var.clone())),
-                            )
-                        } else {
-                            let expected_value = !not_flag;
-                            Expr::BinaryOp(
-                                Box::new(Expr::Ident(port_var.clone())),
-                                "==".to_string(),
-                                Box::new(Expr::Literal(Literal::Bool(expected_value))),
-                            )
-                        };
+    //         for trigger in &execute_cond.dispatch_triggers {
+    //             match trigger {
+    //                 DispatchTrigger::InEventPort(port_name) => {
+    //                     let port_var = port_name.to_lowercase().to_string();
+    //                     let mut condition = if use_less_than {
+    //                         let number_literal = parsed_number.as_ref().unwrap().clone();
+    //                         Expr::BinaryOp(
+    //                             Box::new(Expr::Literal(number_literal)),
+    //                             "<".to_string(),
+    //                             Box::new(Expr::Ident(port_var.clone())),
+    //                         )
+    //                     } else {
+    //                         let expected_value = !not_flag;
+    //                         Expr::BinaryOp(
+    //                             Box::new(Expr::Ident(port_var.clone())),
+    //                             "==".to_string(),
+    //                             Box::new(Expr::Literal(Literal::Bool(expected_value))),
+    //                         )
+    //                     };
                         
-                        if use_less_than && not_flag {
-                            condition = Expr::UnaryOp("!".to_string(), Box::new(condition));
-                        }
+    //                     if use_less_than && not_flag {
+    //                         condition = Expr::UnaryOp("!".to_string(), Box::new(condition));
+    //                     }
                         
-                        conditions.push(condition);
-                    }
-                    DispatchTrigger::InEventDataPort(port_name) => {
-                        let port_var = format!("{}_val", port_name.to_lowercase());
-                        let mut condition = Expr::MethodCall(
-                            Box::new(Expr::Ident(port_var)),
-                            "is_some".to_string(),
-                            Vec::new(),
-                        );
-                        if not_flag {
-                            condition = Expr::UnaryOp("!".to_string(), Box::new(condition));
-                        }
-                        conditions.push(condition);
-                    }
-                }
+    //                     conditions.push(condition);
+    //                 }
+    //                 DispatchTrigger::InEventDataPort(port_name) => {
+    //                     let port_var = format!("{}_val", port_name.to_lowercase());
+    //                     let mut condition = Expr::MethodCall(
+    //                         Box::new(Expr::Ident(port_var)),
+    //                         "is_some".to_string(),
+    //                         Vec::new(),
+    //                     );
+    //                     if not_flag {
+    //                         condition = Expr::UnaryOp("!".to_string(), Box::new(condition));
+    //                     }
+    //                     conditions.push(condition);
+    //                 }
+    //             }
+    //         }
+    //         // 生成条件
+    //         if conditions.len() == 1 {
+    //             conditions[0].clone()
+    //         } else {
+    //             let mut result = conditions.remove(0);
+    //             for condition in conditions {
+    //                 result = Expr::BinaryOp(
+    //                     Box::new(result),
+    //                     "&&".to_string(),
+    //                     Box::new(condition),
+    //                 );
+    //             }
+    //             result
+    //         }
+    //     }
+    // }
+    fn generate_guard_condition(&self, execute_cond: &ExecuteCondition) -> Expr {
+        match execute_cond {
+            // 情况 1: 逻辑表达式 (即 ValueExpression)
+            ExecuteCondition::LogicalExpression(val_expr) => {
+                self.convert_value_expression(val_expr)
             }
-            // 生成条件
-            if conditions.len() == 1 {
-                conditions[0].clone()
-            } else {
-                let mut result = conditions.remove(0);
-                for condition in conditions {
-                    result = Expr::BinaryOp(
-                        Box::new(result),
-                        "&&".to_string(),
-                        Box::new(condition),
-                    );
-                }
-                result
+            
+            // 情况 2: Otherwise (通常对应 true)
+            ExecuteCondition::Otherwise => {
+                Expr::Literal(Literal::Bool(true))
+            }
+            
+            // 情况 3: Timeout (暂时不支持或返回 false)
+            ExecuteCondition::Timeout => {
+                Expr::Literal(Literal::Bool(false)) 
             }
         }
     }

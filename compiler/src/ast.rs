@@ -219,7 +219,8 @@ pub mod aadl_ast_cj {
         /// dispatch_condition,特指“on dispatch”
         Dispatch(DispatchCondition),
         /// execute_condition,特指not + identifier端口的情况,自定义了not
-        Execute(DispatchConjunction),
+        // Execute(DispatchConjunction),
+        Execute(ExecuteCondition),
     }
     
     /// 执行条件
@@ -227,7 +228,8 @@ pub mod aadl_ast_cj {
     #[derive(Debug, Clone)]
     pub enum ExecuteCondition {
         /// logical_value_expression
-        LogicalExpression(BehaviorExpression),
+        // LogicalExpression(BehaviorExpression),
+        LogicalExpression(ValueExpression),
         /// behavior_action_block_timeout_catch (暂时忽略timeout相关)
         // ActionBlockTimeoutCatch,
         Timeout,
