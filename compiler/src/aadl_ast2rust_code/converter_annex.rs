@@ -305,6 +305,27 @@ impl AnnexConverter {
                 // for trigger in &execute_cond.dispatch_triggers {
                 //     self.extract_port_from_trigger(trigger, ports);
                 // }
+                
+                // 提取端口/变量
+                let ast_string = format!("{:?}", execute_cond);
+
+                // 按所有非字母数字的符号切开
+                for word in ast_string.split(|c: char| !c.is_ascii_alphanumeric() && c != '_') {
+                    if !word.is_empty() && word.chars().next().unwrap().is_ascii_lowercase() {
+                        // 过滤掉 Rust 生成的无关词汇和 AADL 关键字
+                        let ignore_list = [
+                            "some", "none", "true", "false", "otherwise", "timeout", 
+                            "execute", "logicalexpression", "behaviorexpression", "string", "vec",
+                            "left", "right", "operator", "operations", "sign", "comparison",
+                            "value", "constant", "variable", "identifier",
+                            "and", "or", "xor", "not", "mod", "rem", "abs"
+                        ];
+                        
+                        if !ignore_list.contains(&word.to_lowercase().as_str()) {
+                            ports.insert(word.to_string());
+                        }
+                    }
+                }
             }
         }
     }
@@ -440,7 +461,12 @@ impl AnnexConverter {
         // 处理转换条件
         if let Some(condition) = &transition.behavior_condition {
             match condition {
-                BehaviorCondition::Dispatch(_) => {
+                BehaviorCondition::Dispatch(dispatch_cond) => {
+                    if dispatch_cond.trigger_condition.is_some() || dispatch_cond.frozen_ports.is_some() {
+                        // 生成一个带有注释的 guard，让 Rust 编译器认为这是一个独立的条件分支
+                        guard = Some(Expr::Ident("true /* 占位: 遇到了 stop 或 frozen 等特殊调度 */".to_string()));
+                        self.states_with_conditions.insert(source_state.to_string());
+                    }
                     // 处理 "on dispatch" 条件
                     stmts.push(Statement::Comment(format!("on dispatch → {}", transition.destination_state)));
                     stmts.push(Statement::Expr(Expr::Assign(

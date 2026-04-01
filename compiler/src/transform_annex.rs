@@ -223,14 +223,47 @@ pub fn transform_transitions(pair: Pair<BARule>) -> Vec<Transition> {
 
 /// 转换单个转换声明
 /// 处理 transition_declaration 规则
-/// 语法: identifier ~ "-[" ~ guard? ~ "]->" ~ identifier ~ behavior_action_block? ~ ";"
 pub fn transform_transition_declaration(pair: Pair<BARule>) -> Transition {
+    // 通过原始文本判断是否带有标签 (冒号在 "-[" 之前)
+    let original_text = pair.as_str();
+    let has_label = original_text.find(':').unwrap_or(usize::MAX) 
+                  < original_text.find("-[").unwrap_or(usize::MAX);
+
     let mut inner_iter = pair.into_inner();
     
     // 第一个 identifier 是源状态
-    let source_state = extract_ba_identifier(inner_iter.next().unwrap());
-    let source_states = vec![source_state];
-    
+    // let source_state = extract_ba_identifier(inner_iter.next().unwrap());
+    // let source_states = vec![source_state];
+    let mut transition_identifier = None;
+    let mut source_states = Vec::new();
+
+    // 提取标签和源状态
+    if has_label {
+        // 第一个 identifier 是转换标签
+        transition_identifier = Some(extract_ba_identifier(inner_iter.next().unwrap()));
+        
+        // 接下来的 identifier 都是源状态
+        while let Some(next_pair) = inner_iter.peek() {
+            if next_pair.as_rule() == BARule::identifier {
+                source_states.push(extract_ba_identifier(inner_iter.next().unwrap()));
+            } else {
+                break; // 遇到了 guard 或其他规则，停止提取
+            }
+        }
+    } else {
+        // 没有标签，第一个 identifier 就是源状态
+        source_states.push(extract_ba_identifier(inner_iter.next().unwrap()));
+        
+        // 提取后续可能用逗号分隔的源状态
+        while let Some(next_pair) = inner_iter.peek() {
+            if next_pair.as_rule() == BARule::identifier {
+                source_states.push(extract_ba_identifier(inner_iter.next().unwrap()));
+            } else {
+                break;
+            }
+        }
+    }
+
     // 跳过 "-["
     //let _dash_bracket = inner_iter.next();
     
@@ -268,7 +301,7 @@ pub fn transform_transition_declaration(pair: Pair<BARule>) -> Transition {
     }
     
     Transition {
-        transition_identifier: None, // 转换暂不设置独立的标识符
+        transition_identifier, // 转换暂不设置独立的标识符
         priority: None,
         source_states,
         destination_state,
@@ -505,6 +538,10 @@ fn transform_execute_condition(pair: Pair<BARule>) -> ExecuteCondition {
 /// 转换分发触发条件
 /// 处理 dispatch_trigger_condition 规则
 fn transform_dispatch_trigger_condition(pair: Pair<BARule>) -> DispatchTriggerCondition {
+    if pair.as_str().trim() == "stop" {
+        return DispatchTriggerCondition::Stop;
+    }
+    
     let inner = pair.into_inner().next().unwrap();
     
     match inner.as_rule() {

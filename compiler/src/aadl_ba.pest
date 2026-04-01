@@ -3,12 +3,14 @@ COMMENT = _{ "/*" ~ (!"*/" ~ ANY)* ~ "*/" | "--" ~ (!"\n" ~ ANY)* }
 
 // 基础标识符规则
 identifier = @{ 
+    !keyword ~
     ASCII_ALPHA ~ 
     //(ASCII_ALPHANUMERIC | '_' .. '.')*  // 不知道为什么不行
     (ASCII_ALPHANUMERIC | '_' .. '_' | '.'..'.')*  
 }
 
 no_point_identifier = @{ 
+    !keyword ~
     ASCII_ALPHA ~ 
     (ASCII_ALPHANUMERIC | '_' .. '_' )*  
 }
@@ -17,7 +19,7 @@ qualified_identifier = @{ (identifier ~ "::")* ~ identifier }
 
 keyword = @{ 
     "variables" | "states" | "transitions" | "state" | "initial" | "complete" | "final" | 
-    "on" | "dispatch" | "frozen" | "otherwise" | "timeout" | "computation" | 
+    "on" | "dispatch" | "frozen" | "stop" | "otherwise" | "timeout" | "computation" | 
     "if" | "elsif" | "else" | "end" | "for" | "forall" | "while" | "do" | "until" | 
     "and" | "or" | "not" | "mod" | "rem" | "abs"
 }
@@ -438,11 +440,12 @@ multiplying_operator = {
 
 // 因子
 // factor ::= value [ binary_numeric_operator value ] | unary_numeric_operator value | unary_boolean_operator value
+// 必须长的在前面
 factor = { 
-    value |
-    (value ~ binary_numeric_operator ~ value) |
     (unary_numeric_operator ~ value) |
-    (unary_boolean_operator ~ value)
+    (unary_boolean_operator ~ value) |
+    (value ~ binary_numeric_operator ~ value) |
+    value
 }
 
 // 二元数值操作符
