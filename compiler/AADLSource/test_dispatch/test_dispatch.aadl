@@ -1,0 +1,76 @@
+package Test_Dispatch
+public
+  with Base_Types;
+
+  -- =========================================
+  -- 1. 线程定义 (Thread)
+  -- =========================================
+  thread dispatch_tester
+    features
+      in_event_1 : in event port;
+      in_p1      : in data port Base_Types::Integer;
+      in_p2      : in data port Base_Types::Integer;
+      out_code   : out data port Base_Types::Integer;
+  end dispatch_tester;
+
+  thread implementation dispatch_tester.i
+    properties
+      Dispatch_Protocol => Periodic;
+      Period => 20 ms;
+    annex Behavior_Specification {**
+      states
+        s_ready : initial complete state;
+        s_run   : complete state;
+        s_pause : complete state;
+        s_final : final state;
+        
+      transitions
+        -- on dispatch
+        t1: s_ready -[ on dispatch ]-> s_run {
+          out_code := 1
+        };
+
+        -- trigger_condition 和 frozen_ports
+        -- 由 in_event_1 触发分发，并在执行期间冻结 in_p1 端口
+        t2: s_run -[ on dispatch in_event_1 frozen in_p1 ]-> s_pause {
+          out_code := 2
+        };
+
+        -- 直接带 frozen_ports 列表
+        -- 周期性分发唤醒，冻结 in_p1 和 in_p2 两个端口
+        t3: s_pause -[ on dispatch frozen in_p1, in_p2 ]-> s_run {
+          out_code := 3
+        };
+
+        -- stop
+        -- 接收到停止分发/调度的指令，进入 final 状态
+        t4: s_run -[ on dispatch stop ]-> s_final {
+          out_code := 4
+        };
+
+        -- stop 和 frozen_ports
+        -- 停止调度，并冻结 in_p1
+        t5: s_pause -[ on dispatch stop frozen in_p1 ]-> s_final {
+          out_code := 5
+        };
+
+    **};
+  end dispatch_tester.i;
+
+  process test_proc
+  end test_proc;
+
+  process implementation test_proc.i
+    subcomponents
+      t : thread dispatch_tester.i;
+  end test_proc.i;
+
+  system root
+  end root;
+
+  system implementation root.i
+    subcomponents
+      p : process test_proc.i;
+  end root.i;
+
+end Test_Dispatch;

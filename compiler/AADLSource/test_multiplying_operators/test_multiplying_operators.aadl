@@ -1,0 +1,83 @@
+package Math_Test
+public
+  with Base_Types;
+
+  thread Math_Thread
+    features
+      in_val: in data port Base_Types::Integer;
+      out_val: out data port Base_Types::Integer;
+  end Math_Thread;
+
+  thread implementation Math_Thread.impl
+    properties
+      Dispatch_Protocol => Periodic;
+      Period => 50 ms;
+    annex Behavior_Specification {**
+      variables
+        temp_val : Base_Types::Integer;
+      states
+        s_ready : initial complete state;
+        s_exec  : state;
+      transitions
+        s_ready -[ on dispatch ]-> s_exec;
+
+        -- *
+        s_exec -[ in_val * 2 > 20 ]-> s_ready {
+          temp_val := in_val * 5;
+          out_val := temp_val
+        };
+
+        -- /
+        s_exec -[ in_val / 3 = 10 ]-> s_ready {
+          temp_val := in_val / 2;
+          out_val := temp_val
+        };
+
+        -- mod
+        s_exec -[ in_val mod 2 = 0 ]-> s_ready {
+          temp_val := in_val mod 8;
+          out_val := temp_val
+        };
+
+        -- rem
+        s_exec -[ in_val rem 5 != 0 ]-> s_ready {
+          temp_val := in_val rem 4;
+          out_val := temp_val
+        };
+
+        -- otherwise
+        s_exec -[ otherwise ]-> s_ready {
+          out_val := 0
+        };
+    **};
+  end Math_Thread.impl;
+
+  process Math_Process
+    features
+      proc_in: in data port Base_Types::Integer;
+      proc_out: out data port Base_Types::Integer;
+  end Math_Process;
+
+  process implementation Math_Process.impl
+    subcomponents
+      my_thread: thread Math_Thread.impl;
+    connections
+      c1: port proc_in -> my_thread.in_val;
+      c2: port my_thread.out_val -> proc_out;
+  end Math_Process.impl;
+
+  system Math_System
+    features
+      sys_in: in data port Base_Types::Integer;
+      sys_out: out data port Base_Types::Integer;
+  end Math_System;
+
+  system implementation Math_System.impl
+    subcomponents
+      my_process: process Math_Process.impl;
+    connections
+      c1: port sys_in -> my_process.proc_in;
+      c2: port my_process.proc_out -> sys_out;
+  end Math_System.impl;
+
+end Math_Test;

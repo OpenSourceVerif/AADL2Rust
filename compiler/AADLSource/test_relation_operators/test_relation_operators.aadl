@@ -1,0 +1,92 @@
+package Test_Relation_Operators
+public
+  with Base_Types;
+
+  thread relation_tester
+  features
+    out_eq : out data port Base_Types::Boolean;
+    out_ne : out data port Base_Types::Boolean;
+    out_lt : out data port Base_Types::Boolean;
+    out_le : out data port Base_Types::Boolean;
+    out_gt : out data port Base_Types::Boolean;
+    out_ge : out data port Base_Types::Boolean;
+    out_err: out data port Base_Types::Boolean; -- 用于 otherwise
+  end relation_tester;
+
+  thread implementation relation_tester.i
+    properties
+      Dispatch_Protocol => Periodic;
+      Period => 20 ms;
+    annex Behavior_Specification {**
+      variables
+        x : Base_Types::Integer := 5;
+        y : Base_Types::Integer := 10;
+        
+      states
+        s0 : initial complete state;
+        s_eq, s_ne, s_lt, s_le, s_gt, s_ge, s_err : complete state;
+
+      transitions
+        -- = 
+        t1: s0 -[ x = y ]-> s_eq {
+          out_eq := true
+        };
+
+        -- !=
+        t2: s0 -[ x != y ]-> s_ne {
+          out_ne := true
+        };
+
+        -- <
+        t3: s0 -[ x < y ]-> s_lt {
+          out_lt := true
+        };
+
+        -- <=
+        t4: s0 -[ x <= y ]-> s_le {
+          out_le := true
+        };
+
+        -- >
+        t5: s0 -[ x > y ]-> s_gt {
+          out_gt := true
+        };
+
+        -- >=
+        t6: s0 -[ x >= y ]-> s_ge {
+          out_ge := true
+        };
+
+        -- 生成器遇到 otherwise 会生成没有 if 保护的 match arm：State::s0 => { ... }
+        t7: s0 -[ otherwise ]-> s_err {
+          out_err := true
+        };
+
+        -- 回到初始状态，便于持续运行
+        s_eq -[ on dispatch ]-> s0;
+        s_ne -[ on dispatch ]-> s0;
+        s_lt -[ on dispatch ]-> s0;
+        s_le -[ on dispatch ]-> s0;
+        s_gt -[ on dispatch ]-> s0;
+        s_ge -[ on dispatch ]-> s0;
+        s_err -[ on dispatch ]-> s0;
+    **};
+  end relation_tester.i;
+
+  process test_proc
+  end test_proc;
+
+  process implementation test_proc.i
+    subcomponents
+      t : thread relation_tester.i;
+  end test_proc.i;
+
+  system root
+  end root;
+
+  system implementation root.i
+    subcomponents
+      p : process test_proc.i;
+  end root.i;
+
+end Test_Relation_Operators;

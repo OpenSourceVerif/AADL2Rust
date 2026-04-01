@@ -1,0 +1,88 @@
+package Test_Logical_Operators
+public
+  with Base_Types;
+
+  thread logic_tester
+    features
+      out_and   : out data port Base_Types::Boolean;
+      out_or    : out data port Base_Types::Boolean;
+      out_xor   : out data port Base_Types::Boolean;
+      out_comp1 : out data port Base_Types::Boolean;
+      out_comp2 : out data port Base_Types::Boolean;
+      out_comp3 : out data port Base_Types::Boolean;
+      out_err   : out data port Base_Types::Boolean;
+  end logic_tester;
+
+  thread implementation logic_tester.i
+    properties
+      Dispatch_Protocol => Periodic;
+      Period => 50 ms;
+    annex Behavior_Specification {**
+      variables
+        flag_a : Base_Types::Boolean := true;
+        flag_b : Base_Types::Boolean := false;
+        flag_c : Base_Types::Boolean := true;
+        counter: Base_Types::Integer := 5; 
+        
+      states
+        s_start : initial complete state;
+        s_done_and, s_done_or, s_done_xor, s_err : complete state;
+        s_comp1, s_comp2, s_comp3 : complete state;
+
+      transitions
+        t1: s_start -[ flag_a and flag_c ]-> s_done_and {
+          out_and := true
+        };
+
+        t2: s_start -[ flag_a or flag_b ]-> s_done_or {
+          out_or := true
+        };
+
+        t3: s_start -[ flag_a xor flag_b ]-> s_done_xor {
+          out_xor := true
+        };
+
+        t4: s_start -[ flag_a and not flag_b ]-> s_comp1 {
+          out_comp1 := true
+        };
+
+        t5: s_start -[ counter > 0 and counter <= 10 ]-> s_comp2 {
+          out_comp2 := true
+        };
+
+        -- 即：(!flag_a && flag_b) || flag_c
+        t6: s_start -[ not flag_a and flag_b or flag_c ]-> s_comp3 {
+          out_comp3 := true
+        };
+
+        t7: s_start -[ otherwise ]-> s_err {
+          out_err := true
+        };
+
+        s_done_and -[ on dispatch ]-> s_start;
+        s_done_or  -[ on dispatch ]-> s_start;
+        s_done_xor -[ on dispatch ]-> s_start;
+        s_comp1    -[ on dispatch ]-> s_start;
+        s_comp2    -[ on dispatch ]-> s_start;
+        s_comp3    -[ on dispatch ]-> s_start;
+        s_err      -[ on dispatch ]-> s_start;
+    **};
+  end logic_tester.i;
+
+  process test_proc
+  end test_proc;
+
+  process implementation test_proc.i
+    subcomponents
+      t : thread logic_tester.i;
+  end test_proc.i;
+
+  system root
+  end root;
+
+  system implementation root.i
+    subcomponents
+      p : process test_proc.i;
+  end root.i;
+
+end Test_Logical_Operators;

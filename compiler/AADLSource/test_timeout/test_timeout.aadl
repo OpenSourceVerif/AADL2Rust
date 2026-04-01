@@ -1,0 +1,55 @@
+package Test_Timeout
+public
+  with Base_Types;
+
+  thread timeout_tester
+    features
+      in_val   : in data port Base_Types::Integer;
+      out_code : out data port Base_Types::Integer;
+  end timeout_tester;
+
+  thread implementation timeout_tester.i
+    properties
+      Dispatch_Protocol => Periodic;
+      Period => 20 ms;
+    annex Behavior_Specification {**
+      states
+        s_ready : initial complete state;
+        s_check : state;
+        
+      transitions
+        t0: s_ready -[ on dispatch ]-> s_check;
+
+        -- 正常分支 (收到有效数据)
+        t1: s_check -[ in_val > 0 ]-> s_ready {
+          out_code := 1
+        };
+
+        -- 超时分支
+        t2: s_check -[ timeout ]-> s_ready {
+          out_code := -1
+        };
+
+        t3: s_check -[ otherwise ]-> s_ready {
+          out_code := 0
+        };
+    **};
+  end timeout_tester.i;
+
+  process test_proc
+  end test_proc;
+
+  process implementation test_proc.i
+    subcomponents
+      t : thread timeout_tester.i;
+  end test_proc.i;
+
+  system root
+  end root;
+
+  system implementation root.i
+    subcomponents
+      p : process test_proc.i;
+  end root.i;
+
+end Test_Timeout;

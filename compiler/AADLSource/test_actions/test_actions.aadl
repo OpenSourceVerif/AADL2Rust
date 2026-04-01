@@ -1,0 +1,131 @@
+package Test_Actions
+public
+  with Base_Types;
+
+  -- 基础动作
+  -- 赋值 、定时动作、端口通信
+  thread test_basic_actions
+    features
+      out_val : out event data port Base_Types::Integer;
+  end test_basic_actions;
+
+  thread implementation test_basic_actions.i
+    properties
+      Dispatch_Protocol => Periodic;
+      Period => 50 ms;
+    annex Behavior_Specification {**
+      variables
+        x : Base_Types::Integer := 0;
+      states
+        s_start : initial complete state;
+        s_end   : complete state;
+      transitions
+        t1: s_start -[ on dispatch ]-> s_end {
+          computation(10 ms);
+          x := 100;
+          out_val!(x)
+        };
+        t2: s_end -[ on dispatch ]-> s_start;
+    **};
+  end test_basic_actions.i;
+
+
+  -- 动作序列与并发集合
+  -- 分号的顺序执行，与符号(&)的并发执行
+  thread test_seq_and_set
+  end test_seq_and_set;
+
+  thread implementation test_seq_and_set.i
+    properties
+      Dispatch_Protocol => Periodic;
+      Period => 50 ms;
+    annex Behavior_Specification {**
+      variables
+        a : Base_Types::Integer := 0;
+        b : Base_Types::Integer := 0;
+        c : Base_Types::Integer := 0;
+      states
+        s_start : initial complete state;
+        s_mid   : complete state;
+        s_end   : complete state;
+      transitions
+        -- ;
+        t1: s_start -[ on dispatch ]-> s_mid {
+          a := 1 ; 
+          b := 2 ; 
+          c := a + b
+        };
+
+        -- &
+        t2: s_mid -[ on dispatch ]-> s_end {
+          a := 10 & 
+          b := 20 & 
+          c := 30
+        };
+
+        t3: s_end -[ on dispatch ]-> s_start;
+    **};
+  end test_seq_and_set.i;
+
+
+  -- 控制流
+  -- if-elsif-else 语句和 while 循环块
+  thread test_control_flow
+    features
+      out_event : out event data port Base_Types::Integer;
+  end test_control_flow;
+
+  thread implementation test_control_flow.i
+    properties
+      Dispatch_Protocol => Periodic;
+      Period => 50 ms;
+    annex Behavior_Specification {**
+      variables
+        counter : Base_Types::Integer := 0;
+      states
+        s_start : initial complete state;
+        s_mid   : complete state;
+        s_end   : complete state;
+      transitions
+        -- if-elsif-else
+        t1: s_start -[ on dispatch ]-> s_mid {
+          if (counter < 10)
+            counter := counter + 1
+          elsif (counter = 10)
+            counter := 0
+          else
+            counter := -1
+          end if
+        };
+
+        -- while
+        t2: s_mid -[ on dispatch ]-> s_end {
+          while (counter > 0) {
+            counter := counter - 1;
+            out_event!(counter)
+          }
+        };
+
+        t3: s_end -[ on dispatch ]-> s_start;
+    **};
+  end test_control_flow.i;
+
+  process test_proc
+  end test_proc;
+
+  process implementation test_proc.i
+    subcomponents
+      th_basic   : thread test_basic_actions.i;
+      th_seq_set : thread test_seq_and_set.i;
+      th_control : thread test_control_flow.i;
+  end test_proc.i;
+
+  system root
+  end root;
+
+  system implementation root.i
+    subcomponents
+      p : process test_proc.i;
+  end root.i;
+
+end Test_Actions;
