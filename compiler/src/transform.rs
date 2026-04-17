@@ -1064,13 +1064,13 @@ impl AADLTransformer {
                         if val_str.contains('.') {
                             PropertyValue::Single(PropertyExpression::Real(SignedRealOrConstant::Real(SignedReal {
                                 sign,
-                                value: val_str.parse().unwrap_or(0.0),
+                                value: val_str.trim().parse().unwrap_or(0.0),
                                 unit,
                             })))
                         } else {
                             PropertyValue::Single(PropertyExpression::Integer(SignedIntergerOrConstant::Real(SignedInteger {
                                 sign,
-                                value: val_str.parse().unwrap_or(0),
+                                value: val_str.trim().parse().unwrap_or(0),
                                 unit,
                             })))
                         }
