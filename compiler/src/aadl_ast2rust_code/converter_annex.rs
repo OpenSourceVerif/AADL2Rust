@@ -7,6 +7,7 @@
 use super::intermediate_ast::*;
 use crate::ast::aadl_ast_cj::*;
 use std::collections::HashMap;
+use std::collections::HashSet;
 
 /// Behavior Annex 代码生成器
 #[derive(Default)]
@@ -15,6 +16,8 @@ pub struct AnnexConverter {
     state_info: HashMap<String, bool>, // state_name -> needs_continue
     /// 存储需要默认分支的状态（有条件判断的状态）
     states_with_conditions: std::collections::HashSet<String>,
+    /// 记录当前 BA 块中定义的变量名
+    pub current_ba_variables: HashSet<String>,
 }
 
 
@@ -48,6 +51,14 @@ impl AnnexConverter {
         if let Some(state_vars) = &behavior_annex.state_variables {
             stmts.extend(self.generate_state_variables(state_vars));
         }
+
+        // 初始化计时器
+        stmts.push(Statement::Let(LetStmt {
+            ifmut: true,
+            name: "last_state_change".to_string(),
+            ty: None,
+            init: Some(Expr::Ident("Instant::now()".to_string())),
+        }));
 
         // 2. 生成状态枚举并存储状态信息
         if let Some(states) = &behavior_annex.states {
@@ -91,12 +102,15 @@ impl AnnexConverter {
     // }
 
     /// 生成状态变量声明
-    fn generate_state_variables(&self, state_vars: &[StateVariable]) -> Vec<Statement> {
+    fn generate_state_variables(&mut self, state_vars: &[StateVariable]) -> Vec<Statement> {
         let mut stmts = Vec::new();
 
         for var in state_vars {
             let var_name = var.identifier.clone();
             let rust_type = self.convert_aadl_type_to_rust(&var.data_type);
+
+            // 将变量名注册到集合中
+            self.current_ba_variables.insert(var_name.clone());
 
             // 生成变量声明
             let init_value = if let Some(init) = &var.initial_value {
@@ -196,6 +210,14 @@ impl AnnexConverter {
         // 构建完整的循环
         let mut loop_body = vec![];
 
+        // 在循环最开始，获取当前时间
+        loop_body.push(Statement::Let(LetStmt {
+            ifmut: false,
+            name: "now".to_string(),
+            ty: None,
+            init: Some(Expr::Ident("Instant::now()".to_string())),
+        }));
+
         // 直接将端口接收语句添加到循环体中，不包装在Block中
         loop_body.extend(port_receive_stmts);
         
@@ -248,20 +270,24 @@ impl AnnexConverter {
         let mut stmts = Vec::new();
         
         // 从转换中提取端口
-        let mut ports_to_receive = std::collections::HashSet::new();
+        let mut identifiers_in_conditions = std::collections::HashSet::new();
         for transition in transitions {
             if let Some(condition) = &transition.behavior_condition {
-                self.extract_ports_from_condition(condition, &mut ports_to_receive);
+                self.extract_ports_from_condition(condition, &mut identifiers_in_conditions);
             }
         }
         
         // 为每个需要接收的端口生成接收代码
-        for port_name in ports_to_receive {
+        for name in identifiers_in_conditions {
+            // 如果该标识符在 BA 局部变量列表中，说明它是内部变量，不是外部端口
+            if self.current_ba_variables.contains(&name) {
+                continue; 
+            }
             let receive_stmt = Statement::Let(LetStmt {
                 ifmut: false,
-                name: port_name.to_string(),
+                name: name.to_string(),
                 ty: None,
-                init: Some(self.build_port_receive_expr(&port_name)),
+                init: Some(self.build_port_receive_expr(&name)),
             });
 
             stmts.push(receive_stmt);
@@ -458,13 +484,37 @@ impl AnnexConverter {
             stmts.extend(self.generate_action_code(actions));
         }
 
+        let timer_reset_stmt = Statement::Expr(Expr::Assign(
+            Box::new(Expr::Ident("last_state_change".to_string())),
+            Box::new(Expr::Ident("now".to_string())),
+        ));
+
         // 处理转换条件
         if let Some(condition) = &transition.behavior_condition {
             match condition {
                 BehaviorCondition::Dispatch(dispatch_cond) => {
-                    if dispatch_cond.trigger_condition.is_some() || dispatch_cond.frozen_ports.is_some() {
-                        // 生成一个带有注释的 guard，让 Rust 编译器认为这是一个独立的条件分支
-                        guard = Some(Expr::Ident("true /* 占位: 遇到了 stop 或 frozen 等特殊调度 */".to_string()));
+                    // 如果有具体的触发器，将其作为 guard
+                    if let Some(trigger_cond) = &dispatch_cond.trigger_condition {
+                        let mut trigger_name = "true".to_string(); // 兜底
+                        if let DispatchTriggerCondition::LogicalExpression(log_expr) = trigger_cond {
+                            // 取第一个结合项
+                            if let Some(conjunction) = log_expr.dispatch_conjunctions.first() {
+                                // 取第一个触发器
+                                if let Some(trigger) = conjunction.dispatch_triggers.first() {
+                                    trigger_name = match trigger {
+                                        DispatchTrigger::InEventPort(name) => name.clone(),
+                                        DispatchTrigger::InEventDataPort(name) => name.clone(),
+                                    };
+                                }
+                            }
+                        } else if matches!(trigger_cond, DispatchTriggerCondition::Stop) {
+                            trigger_name = "stop_signal".to_string();
+                        };
+                    guard = Some(Expr::Ident(format!("{}.is_some()", trigger_name)));
+                    self.states_with_conditions.insert(source_state.to_string());
+                    } else if dispatch_cond.frozen_ports.is_some() {
+                        // 如果只是 frozen，保持原有的占位符或根据需求处理
+                        guard = Some(Expr::Ident("true /* frozen ports handled */".to_string()));
                         self.states_with_conditions.insert(source_state.to_string());
                     }
                     // 处理 "on dispatch" 条件
@@ -476,7 +526,8 @@ impl AnnexConverter {
                             PathType::Namespace,
                         )),
                     )));
-                    
+                    stmts.push(timer_reset_stmt.clone()); // 重置计时器
+
                     // 检查目标状态是否需要continue
                     if self.should_continue_state(&transition.destination_state) {
                         stmts.push(Statement::Continue);
@@ -491,11 +542,16 @@ impl AnnexConverter {
                     //     // 记录这个状态有条件判断，需要添加默认分支
                     //     self.states_with_conditions.insert(source_state.to_string());
                     // }
-                    if let BehaviorCondition::Execute(execute_cond) = &condition {
-                        // 检查是否不是 Otherwise
-                        if !matches!(execute_cond, ExecuteCondition::Otherwise) {
-                            guard = Some(self.generate_guard_condition(execute_cond));
-                        }
+                    // if let BehaviorCondition::Execute(execute_cond) = &condition {
+                    //     // 检查是否不是 Otherwise
+                    //     if !matches!(execute_cond, ExecuteCondition::Otherwise) {
+                    //         guard = Some(self.generate_guard_condition(execute_cond));
+                    //     }
+                    // }
+                    if !matches!(execute_cond, ExecuteCondition::Otherwise) {
+                        guard = Some(self.generate_guard_condition(execute_cond));
+                        // 记录这个状态有条件判断，需要添加默认分支
+                        self.states_with_conditions.insert(source_state.to_string());
                     }
                     
                     // 状态转换
@@ -506,7 +562,8 @@ impl AnnexConverter {
                             PathType::Namespace,
                         )),
                     )));
-                    
+                    stmts.push(timer_reset_stmt.clone()); // 重置计时器
+
                     // 检查目标状态是否需要continue
                     if self.should_continue_state(&transition.destination_state) {
                         stmts.push(Statement::Continue);
@@ -524,7 +581,8 @@ impl AnnexConverter {
                     PathType::Namespace,
                 )),
             )));
-            
+            stmts.push(timer_reset_stmt.clone()); // 重置计时器
+
             if self.should_continue_state(&transition.destination_state) {
                 stmts.push(Statement::Continue);
             } else {
@@ -632,7 +690,9 @@ impl AnnexConverter {
             
             // 情况 3: Timeout (暂时不支持或返回 false)
             ExecuteCondition::Timeout => {
-                Expr::Literal(Literal::Bool(false)) 
+                Expr::Ident(
+                    "now.duration_since(last_state_change) >= Duration::from_millis(self.period)".to_string()
+                ) 
             }
         }
     }
@@ -1239,7 +1299,8 @@ impl AnnexConverter {
             }
             BasicExpression::Timeout(_) => {
                 // 超时表达式，暂时返回默认值
-                Expr::Literal(Literal::Int(0))
+                // Expr::Literal(Literal::Int(0))
+                Expr::Ident("self.period".to_string())
             }
             BasicExpression::DataSubcomponent(sub_name) => {
                 Expr::Path(
@@ -1271,9 +1332,16 @@ impl AnnexConverter {
                 // 子程序调用，暂时返回默认值
                 Expr::Literal(Literal::Int(0))
             }
-            BasicExpression::DataClassifierSubprogramWithTimeout { classifier:_, subprogram:_, timeout:_ } => {
+            BasicExpression::DataClassifierSubprogramWithTimeout { classifier:_, subprogram:_, timeout } => {
                 // 带超时的子程序调用，暂时返回默认值
-                Expr::Literal(Literal::Int(0))
+                // Expr::Literal(Literal::Int(0))
+                let inner_expr = self.convert_basic_expression(&**timeout);
+                // 将得到的 Expr 转换为字符串
+                let timeout_str = match inner_expr {
+                    Expr::Ident(s) => s,
+                    _ => "0".to_string(),
+                };
+                Expr::Ident(format!("Duration::from_millis({})", timeout_str))
             }
             BasicExpression::DataClassifierSubprogramWithParameter { classifier:_, subprogram:_, parameter:_, expression:_ } => {
                 // 带参数的子程序调用，暂时返回默认值
@@ -1314,4 +1382,4 @@ impl AnnexConverter {
             }
         }
     }
-} 
+}
