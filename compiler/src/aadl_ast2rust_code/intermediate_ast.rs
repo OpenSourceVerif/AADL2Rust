@@ -148,6 +148,7 @@ pub enum Expr {
     MethodCall(Box<Expr>, String, Vec<Expr>),
     Block(Block),
     Loop(Box<Block>),
+    Break,
     Await(Box<Expr>),
     Closure(Vec<String>, Box<Expr>),
     BuilderChain(Vec<BuilderMethod>), // 新增：表示(进程在创建线程时)构建器链式调用
@@ -162,6 +163,15 @@ pub enum Expr {
         value: Box<Expr>,
         then_branch: Block,
         else_branch: Option<Block>,
+    },
+    While {
+        condition: Box<Expr>,
+        body: Block,
+    },
+    For {
+        var: String,
+        range: String,
+        body: Block,
     },
     Match {
         expr: Box<Expr>,

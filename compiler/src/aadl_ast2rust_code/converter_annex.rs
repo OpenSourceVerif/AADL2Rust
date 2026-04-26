@@ -736,6 +736,18 @@ impl AnnexConverter {
             BehaviorAction::If(if_stmt) => {
                 stmts.extend(self.generate_if_statement(if_stmt));
             }
+            BehaviorAction::For(for_stmt) => {
+                stmts.extend(self.generate_for_statement(for_stmt));
+            }
+            BehaviorAction::While(while_stmt) => {
+                stmts.extend(self.generate_while_statement(while_stmt));
+            }
+            BehaviorAction::DoUntil(do_until_stmt) => {
+                stmts.extend(self.generate_do_until_statement(do_until_stmt));
+            }
+            BehaviorAction::Forall(forall_stmt) => {
+                stmts.extend(self.generate_forall_statement(forall_stmt));
+            }
             _ => {
                 // 其他类型的动作暂时跳过
                 stmts.push(Statement::Comment("TODO: Unsupported action type".to_string()));
@@ -909,16 +921,190 @@ impl AnnexConverter {
         stmts
     }
 
-    /// 生成定时动作
-    fn generate_timed_action(&self, _timed: &TimedAction) -> Vec<Statement> {
-        // 定时动作暂时跳过
-        vec![Statement::Comment("TODO: Timed action not implemented".to_string())]
+    /// 表达式逻辑：映射 AADL 比较符到 Rust 字符串
+    fn convert_behavior_expression(&self, expr: &BehaviorExpression) -> Expr {
+        if let Some(disjunction) = expr.disjunctions.first() {
+            if let Some(not_conjunction) = disjunction.not_conjunctions.first() {
+                let conjunction = &not_conjunction.conjunction;
+                
+                let left_basic = &conjunction.left.left.left; 
+                let mut rust_expr = self.convert_basic_expression(left_basic);
+
+                if let Some(comp) = &conjunction.comparison {
+                    let right_basic = &comp.right.left.left;
+                    let right_expr = self.convert_basic_expression(right_basic);
+                    
+                    let op_str = match comp.operator {
+                        ComparisonOperator::LessThan => "<",
+                        ComparisonOperator::LessThanOrEqual => "<=",
+                        ComparisonOperator::Equal => "==",
+                        ComparisonOperator::GreaterThan => ">",
+                        ComparisonOperator::GreaterThanOrEqual => ">=",
+                        ComparisonOperator::NotEqual => "!=",
+                    }.to_string();
+
+                    rust_expr = Expr::BinaryOp(
+                        Box::new(rust_expr),
+                        op_str,
+                        Box::new(right_expr),
+                    );
+                }
+
+                if not_conjunction.has_not {
+                    rust_expr = Expr::UnaryOp("!".to_string(), Box::new(rust_expr));
+                }
+                return rust_expr;
+            }
+        }
+        Expr::Ident("true".to_string())
     }
 
-    /// 生成if语句
-    fn generate_if_statement(&self, _if_stmt: &IfStatement) -> Vec<Statement> {
-        // if语句暂时跳过
-        vec![Statement::Comment("TODO: If statement not implemented".to_string())]
+    /// 语句转换：适配中间 AST 结构实现六大规则
+    fn convert_ba_actions_to_stmts(&self, actions: &BehaviorActions) -> Vec<Statement> {
+        let temp_block = BehaviorActionBlock {
+            actions: actions.clone(),
+            timeout: None,
+        };
+        self.generate_action_code(&temp_block)
+    }
+
+    /// 生成定时动作 (computation)
+    fn generate_timed_action(&self, timed: &TimedAction) -> Vec<Statement> {
+        let val_str = match &timed.start_time.value {
+            IntegerValue::Constant(s) => s.split_whitespace().next().unwrap_or("0").to_string(),
+            IntegerValue::Variable(v) => v.clone(),
+        };
+        let duration_call = Expr::Call(
+            Box::new(Expr::Path(vec!["std".into(), "time".into(), "Duration".into(), "from_millis".into()], PathType::Namespace)),
+            vec![Expr::Ident(val_str)]
+        );
+        
+        let sleep_call = Expr::Call(
+            Box::new(Expr::Path(vec!["std".into(), "thread".into(), "sleep".into()], PathType::Namespace)),
+            vec![duration_call]
+        );
+
+        vec![Statement::Expr(sleep_call)]
+    }
+
+    /// 生成 if 语句
+    fn generate_if_statement(&self, if_stmt: &IfStatement) -> Vec<Statement> {
+        let condition = self.convert_behavior_expression(&if_stmt.condition);
+        let then_branch = Block {
+            stmts: self.convert_ba_actions_to_stmts(&if_stmt.then_actions),
+            expr: None,
+        };
+
+        let mut final_else_branch = if_stmt.else_actions.as_ref().map(|actions| Block {
+            stmts: self.convert_ba_actions_to_stmts(actions),
+            expr: None,
+        });
+
+        for elsif in if_stmt.elsif_branches.iter().rev() {
+            let elsif_cond = self.convert_behavior_expression(&elsif.condition);
+            let elsif_body = Block {
+                stmts: self.convert_ba_actions_to_stmts(&elsif.actions),
+                expr: None,
+            };
+
+            let nested_if = Expr::If {
+                condition: Box::new(elsif_cond),
+                then_branch: elsif_body,
+                else_branch: final_else_branch,
+            };
+
+            final_else_branch = Some(Block {
+                stmts: vec![Statement::Expr(nested_if)],
+                expr: None,
+            });
+        }
+
+        vec![Statement::Expr(Expr::If {
+            condition: Box::new(condition),
+            then_branch,
+            else_branch: final_else_branch,
+        })]
+    }
+
+    /// 生成 while 语句
+    fn generate_while_statement(&self, while_stmt: &WhileStatement) -> Vec<Statement> {
+        let condition = self.convert_behavior_expression(&while_stmt.condition);
+        let body_stmts = self.convert_ba_actions_to_stmts(&while_stmt.actions);
+        
+        vec![Statement::Expr(Expr::While {
+            condition: Box::new(condition),
+            body: Block {
+                stmts: body_stmts,
+                expr: None,
+            },
+        })]
+    }
+
+    // 辅助函数：统一处理 for 和 forall 的遍历对象
+    fn resolve_iter_range(&self, values: &ElementValues) -> String {
+        match values {
+            ElementValues::IntegerRange(range) => {
+                let low = match &range.lower {
+                    IntegerValue::Constant(s) => s.trim().to_string(),
+                    IntegerValue::Variable(v) => v.clone(),
+                };
+                let up = match &range.upper {
+                    IntegerValue::Constant(s) => s.trim().to_string(),
+                    IntegerValue::Variable(v) => v.clone(),
+                };
+                format!("{}..={}", low, up)
+            }
+            ElementValues::ArrayDataComponent(name) | ElementValues::EventDataPort(name) => {
+                format!("{}.iter()", name)
+            }
+            _ => "0..0".to_string(),
+        }
+    }
+
+    /// 生成 for 语句
+    fn generate_for_statement(&self, for_stmt: &ForStatement) -> Vec<Statement> {
+        vec![Statement::Expr(Expr::For {
+            var: for_stmt.element_identifier.clone(),
+            range: self.resolve_iter_range(&for_stmt.element_values),
+            body: Block {
+                stmts: self.convert_ba_actions_to_stmts(&for_stmt.actions),
+                expr: None,
+            },
+        })]
+    }
+
+    /// 生成 forall 语句
+    fn generate_forall_statement(&self, forall_stmt: &ForallStatement) -> Vec<Statement> {
+        vec![Statement::Expr(Expr::For {
+            var: forall_stmt.element_identifier.clone(),
+            range: self.resolve_iter_range(&forall_stmt.element_values),
+            body: Block {
+                stmts: self.convert_ba_actions_to_stmts(&forall_stmt.actions),
+                expr: None,
+            },
+        })]
+    }
+
+    /// 生成 do-until 语句
+    fn generate_do_until_statement(&self, do_until: &DoUntilStatement) -> Vec<Statement> {
+        let condition = self.convert_behavior_expression(&do_until.condition);
+        let mut body_stmts = self.convert_ba_actions_to_stmts(&do_until.actions);
+        
+        let break_if = Expr::If {
+            condition: Box::new(condition),
+            then_branch: Block {
+                stmts: vec![Statement::Break],
+                expr: None,
+            },
+            else_branch: None,
+        };
+        
+        body_stmts.push(Statement::Expr(break_if));
+
+        vec![Statement::Expr(Expr::Loop(Box::new(Block {
+            stmts: body_stmts,
+            expr: None,
+        })))]
     }
 
     /// 判断状态是否需要continue

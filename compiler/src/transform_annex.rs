@@ -893,76 +893,263 @@ pub fn transform_annexes_clause(pair: Pair<AADLRule>) -> Vec<AnnexSubclause> {
     annexes
 }
 
+/// 映射关系操作符
+fn map_relational_to_comparison(op: RelationalOperator) -> ComparisonOperator {
+    match op {
+        RelationalOperator::Equal => ComparisonOperator::Equal,
+        RelationalOperator::NotEqual => ComparisonOperator::NotEqual,
+        RelationalOperator::LessThan => ComparisonOperator::LessThan,
+        RelationalOperator::LessThanOrEqual => ComparisonOperator::LessThanOrEqual,
+        RelationalOperator::GreaterThan => ComparisonOperator::GreaterThan,
+        RelationalOperator::GreaterThanOrEqual => ComparisonOperator::GreaterThanOrEqual,
+    }
+}
+
+/// 将 Factor 转换为 BasicExpression
+fn factor_to_basic(factor: Factor) -> BasicExpression {
+    match factor {
+        Factor::Value(val) => match val {
+            Value::Variable(v) => match v {
+                ValueVariable::LocalVariable(name) => BasicExpression::BehaviorVariable(name),
+                ValueVariable::IncomingPort(name) => BasicExpression::Port(name),
+                _ => BasicExpression::NumericOrConstant("0".to_string()),
+            },
+            Value::Constant(c) => match c {
+                ValueConstant::Numeric(n) => BasicExpression::NumericOrConstant(n),
+                ValueConstant::Boolean(b) => BasicExpression::NumericOrConstant(b.to_string()),
+                _ => BasicExpression::NumericOrConstant("0".to_string()),
+            },
+            Value::Expression(expr) => {
+                BasicExpression::NumericOrConstant("nested_expr".to_string())
+            }
+        },
+        _ => BasicExpression::NumericOrConstant("0".to_string()),
+    }
+}
+
+/// 将 Term 转换为 AddExpression
+fn term_to_add(term: Term) -> AddExpression {
+    AddExpression {
+        left: factor_to_basic(term.left),
+        operations: term.operations,
+    }
+}
+
+/// 将 SimpleExpression 转换为 ArithmeticExpression
+fn simple_to_arith(simple: SimpleExpression) -> ArithmeticExpression {
+    ArithmeticExpression {
+        left: term_to_add(simple.left),
+        operations: simple.operations,
+    }
+}
+
+/// 将 ValueExpression 转换为 BehaviorExpression
+fn wrap_val_to_be(val: ValueExpression) -> BehaviorExpression {
+    let relation = val.left;
+
+    let conjunction = ConjunctionExpression {
+        left: simple_to_arith(relation.left),
+        comparison: relation.comparison.map(|c| ComparisonExpression {
+            operator: map_relational_to_comparison(c.operator),
+            right: simple_to_arith(c.right),
+        }),
+    };
+
+    BehaviorExpression {
+        disjunctions: vec![DisjunctionExpression {
+            not_conjunctions: vec![NotConjunctionExpression {
+                has_not: false,
+                conjunction: conjunction,
+            }],
+        }],
+    }
+}
+
 /// 转换行为时间
 /// 处理 behavior_time 规则
-pub fn transform_behavior_time(_pair: Pair<BARule>) -> BehaviorTime {
+pub fn transform_behavior_time(pair: Pair<BARule>) -> BehaviorTime {
     // 暂时返回默认值，后续可以根据需要完善
-    BehaviorTime {
-        value: IntegerValue::Constant("0".to_string()),
-        unit: "ms".to_string(),
+    // BehaviorTime {
+    //     value: IntegerValue::Constant("0".to_string()),
+    //     unit: "ms".to_string(),
+    // }
+    let mut inner = pair.into_inner();
+    let value = if let Some(v) = inner.next() {
+        transform_integer_value(v)
+    } else {
+        IntegerValue::Constant("0".to_string())
+    };
+    let unit = inner.next().map(|p| p.as_str().to_string()).unwrap_or_else(|| "ms".to_string());
+    BehaviorTime { value, unit }
+}
+
+// 转换整数值
+pub fn transform_integer_value(pair: Pair<BARule>) -> IntegerValue {
+    let raw_str = pair.as_str().to_string();
+    if let Some(inner) = pair.clone().into_inner().next() {
+        match inner.as_rule() {
+            BARule::number => IntegerValue::Constant(inner.as_str().to_string()),
+            BARule::identifier => IntegerValue::Variable(inner.as_str().to_string()),
+            _ => IntegerValue::Constant(raw_str),
+        }
+    } else {
+        IntegerValue::Constant(raw_str)
     }
 }
 
 /// 转换 if 语句
 /// 处理 if_statement 规则
-pub fn transform_if_statement(_pair: Pair<BARule>) -> IfStatement {
+pub fn transform_if_statement(pair: Pair<BARule>) -> IfStatement {
     // 暂时返回默认值，后续可以根据需要完善
-    IfStatement {
-        condition: BehaviorExpression { disjunctions: vec![] },
-        then_actions: Box::new(BehaviorActions::Sequence(BehaviorActionSequence { actions: vec![] })),
-        elsif_branches: vec![],
-        else_actions: None,
+    // IfStatement {
+    //     condition: BehaviorExpression { disjunctions: vec![] },
+    //     then_actions: Box::new(BehaviorActions::Sequence(BehaviorActionSequence { actions: vec![] })),
+    //     elsif_branches: vec![],
+    //     else_actions: None,
+    // }
+    let mut inner = pair.into_inner();
+    
+    let condition = wrap_val_to_be(transform_behavior_expression(inner.next().expect("Missing condition")));
+    let then_actions = Box::new(transform_behavior_actions(inner.next().expect("Missing then actions")));
+    
+    let mut elsif_branches = Vec::new();
+    let mut else_actions = None;
+
+    while let Some(current) = inner.next() {
+        match current.as_rule() {
+            BARule::behavior_expression => {
+                let cond = wrap_val_to_be(transform_behavior_expression(current));
+                if let Some(act_pair) = inner.next() {
+                    let acts = Box::new(transform_behavior_actions(act_pair));
+                    elsif_branches.push(ElsifBranch { condition: cond, actions: acts });
+                }
+            }
+            BARule::behavior_actions => {
+                else_actions = Some(Box::new(transform_behavior_actions(current)));
+            }
+            _ => {}
+        }
     }
+
+    IfStatement {
+        condition,
+        then_actions,
+        elsif_branches,
+        else_actions,
+    }
+}
+
+/// 转换 elsif 分支
+pub fn transform_elsif_branch(pair: Pair<BARule>) -> ElsifBranch {
+    let mut inner = pair.into_inner();
+    let condition = wrap_val_to_be(transform_behavior_expression(inner.next().unwrap()));
+    let actions = Box::new(transform_behavior_actions(inner.next().unwrap()));
+    ElsifBranch { condition, actions }
 }
 
 /// 转换 for 语句
 /// 处理 for_statement 规则
-pub fn transform_for_statement(_pair: Pair<BARule>) -> ForStatement {
+pub fn transform_for_statement(pair: Pair<BARule>) -> ForStatement {
     // 暂时返回默认值，后续可以根据需要完善
+    // ForStatement {
+    //     element_identifier: "".to_string(),
+    //     data_classifier: "".to_string(),
+    //     element_values: ElementValues::IntegerRange(IntegerRange { 
+    //         lower: IntegerValue::Constant("0".to_string()),
+    //         upper: IntegerValue::Constant("0".to_string())
+    //     }),
+    //     actions: Box::new(BehaviorActions::Sequence(BehaviorActionSequence { actions: vec![] })),
+    // }
+    let mut inner = pair.into_inner();
+    let element_identifier = inner.next().unwrap().as_str().to_string();
+    let data_classifier = inner.next().unwrap().as_str().to_string();
+    let element_values = transform_element_values(inner.next().unwrap());
+    let actions = Box::new(transform_behavior_actions(inner.next().unwrap()));
+
     ForStatement {
-        element_identifier: "".to_string(),
-        data_classifier: "".to_string(),
-        element_values: ElementValues::IntegerRange(IntegerRange { 
+        element_identifier,
+        data_classifier,
+        element_values,
+        actions,
+    }
+}
+
+/// 转换元素值范围
+pub fn transform_element_values(pair: Pair<BARule>) -> ElementValues {
+    if let Some(range_pair) = pair.clone().into_inner().next() {
+        let mut inner_pairs = range_pair.into_inner();
+        let lower = if let Some(l) = inner_pairs.next() {
+            transform_integer_value(l)
+        } else {
+            IntegerValue::Constant("0".to_string())
+        };
+        let upper = if let Some(u) = inner_pairs.next() {
+            transform_integer_value(u)
+        } else {
+            IntegerValue::Constant("10".to_string())
+        };
+        ElementValues::IntegerRange(IntegerRange { lower, upper })
+    } else {
+        ElementValues::IntegerRange(IntegerRange {
             lower: IntegerValue::Constant("0".to_string()),
-            upper: IntegerValue::Constant("0".to_string())
-        }),
-        actions: Box::new(BehaviorActions::Sequence(BehaviorActionSequence { actions: vec![] })),
+            upper: IntegerValue::Constant("10".to_string()),
+        })
     }
 }
 
 /// 转换 forall 语句
 /// 处理 forall_statement 规则
-pub fn transform_forall_statement(_pair: Pair<BARule>) -> ForallStatement {
+pub fn transform_forall_statement(pair: Pair<BARule>) -> ForallStatement {
     // 暂时返回默认值，后续可以根据需要完善
+    // ForallStatement {
+    //     element_identifier: "".to_string(),
+    //     data_classifier: "".to_string(),
+    //     element_values: ElementValues::IntegerRange(IntegerRange { 
+    //         lower: IntegerValue::Constant("0".to_string()),
+    //         upper: IntegerValue::Constant("0".to_string())
+    //     }),
+    //     actions: Box::new(BehaviorActions::Sequence(BehaviorActionSequence { actions: vec![] })),
+    // }
+    let mut inner = pair.into_inner();
+    let element_identifier = inner.next().unwrap().as_str().to_string();
+    let data_classifier = inner.next().unwrap().as_str().to_string();
+    let element_values = transform_element_values(inner.next().unwrap());
+    let actions = Box::new(transform_behavior_actions(inner.next().unwrap()));
+
     ForallStatement {
-        element_identifier: "".to_string(),
-        data_classifier: "".to_string(),
-        element_values: ElementValues::IntegerRange(IntegerRange { 
-            lower: IntegerValue::Constant("0".to_string()),
-            upper: IntegerValue::Constant("0".to_string())
-        }),
-        actions: Box::new(BehaviorActions::Sequence(BehaviorActionSequence { actions: vec![] })),
+        element_identifier,
+        data_classifier,
+        element_values,
+        actions,
     }
 }
 
 /// 转换 while 语句
 /// 处理 while_statement 规则
-pub fn transform_while_statement(_pair: Pair<BARule>) -> WhileStatement {
+pub fn transform_while_statement(pair: Pair<BARule>) -> WhileStatement {
     // 暂时返回默认值，后续可以根据需要完善
-    WhileStatement {
-        condition: BehaviorExpression { disjunctions: vec![] },
-        actions: Box::new(BehaviorActions::Sequence(BehaviorActionSequence { actions: vec![] })),
-    }
+    // WhileStatement {
+    //     condition: BehaviorExpression { disjunctions: vec![] },
+    //     actions: Box::new(BehaviorActions::Sequence(BehaviorActionSequence { actions: vec![] })),
+    // }
+    let mut inner = pair.into_inner();
+    let condition = wrap_val_to_be(transform_behavior_expression(inner.next().unwrap()));
+    let actions = Box::new(transform_behavior_actions(inner.next().unwrap()));
+    WhileStatement { condition, actions }
 }
 
 /// 转换 do-until 语句
 /// 处理 do_until_statement 规则
-pub fn transform_do_until_statement(_pair: Pair<BARule>) -> DoUntilStatement {
+pub fn transform_do_until_statement(pair: Pair<BARule>) -> DoUntilStatement {
     // 暂时返回默认值，后续可以根据需要完善
-    DoUntilStatement {
-        actions: Box::new(BehaviorActions::Sequence(BehaviorActionSequence { actions: vec![] })),
-        condition: BehaviorExpression { disjunctions: vec![] },
-    }
+    // DoUntilStatement {
+    //     actions: Box::new(BehaviorActions::Sequence(BehaviorActionSequence { actions: vec![] })),
+    //     condition: BehaviorExpression { disjunctions: vec![] },
+    // }
+    let mut inner = pair.into_inner();
+    let actions = Box::new(transform_behavior_actions(inner.next().unwrap()));
+    let condition = wrap_val_to_be(transform_behavior_expression(inner.next().unwrap()));
+    DoUntilStatement { actions, condition }
 }
 
 /// 转换行为表达式

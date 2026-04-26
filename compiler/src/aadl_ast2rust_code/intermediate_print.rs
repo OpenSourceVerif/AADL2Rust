@@ -563,6 +563,9 @@ impl RustCodeGenerator {
                 self.dedent();
                 self.write("}");
             }
+            Expr::Break => {
+                self.write("break");
+            }
             Expr::Await(expr) => {
                 self.generate_expr(expr);
                 self.write(".await");
@@ -671,6 +674,16 @@ impl RustCodeGenerator {
                 
 
                 if let Some(else_branch) = else_branch {
+                    if else_branch.stmts.len() == 1 && else_branch.expr.is_none() {
+                        if let Statement::Expr(inner_expr) = &else_branch.stmts[0] {
+                            if matches!(inner_expr, Expr::If { .. }) {
+                                self.write(" else ");
+                                self.generate_expr(inner_expr);
+                                return;
+                            }
+                        }
+                    }
+
                     self.write(" else ");
                     self.writeln("{");
                     self.indent();
@@ -702,6 +715,23 @@ impl RustCodeGenerator {
                     self.dedent();
                     self.write("}");
                 }
+            }
+            Expr::While { condition, body } => {
+                self.write("while ");
+                self.generate_expr(condition);
+                self.writeln(" {");
+                self.indent();
+                self.generate_block(body);
+                self.dedent();
+                self.write("}");
+            }
+            Expr::For { var, range, body } => {
+                self.write(&format!("for {} in {} ", var, range));
+                self.writeln("{");
+                self.indent();
+                self.generate_block(body);
+                self.dedent();
+                self.write("}");
             }
             Expr::Reference(inner_expr, is_reference, mutable) => {
                 if *is_reference {
