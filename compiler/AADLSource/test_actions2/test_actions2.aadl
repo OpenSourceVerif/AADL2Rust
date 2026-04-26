@@ -1,0 +1,107 @@
+package Test_Actions2
+public
+  with Base_Types;
+
+  -- 1. 专门测试 for 语句的线程
+  thread test_for_thread
+  end test_for_thread;
+
+  thread implementation test_for_thread.i
+    properties
+      Dispatch_Protocol => Periodic;
+      Period => 100 ms;
+    annex Behavior_Specification {**
+      variables
+        total : Base_Types::Integer := 0;
+      states
+        s_start : initial complete state;
+        s_end   : complete state;
+      transitions
+        t1: s_start -[ on dispatch ]-> s_end {
+          -- 测试 for 语句
+          for (i : Integer in 1 .. 10) {
+            total := total + i
+          }
+        };
+        t2: s_end -[ on dispatch ]-> s_start;
+    **};
+  end test_for_thread.i;
+
+
+  -- 2. 专门测试 forall 语句的线程
+  thread test_forall_thread
+    features
+      out_val : out event data port Base_Types::Integer;
+  end test_forall_thread;
+
+  thread implementation test_forall_thread.i
+    properties
+      Dispatch_Protocol => Periodic;
+      Period => 100 ms;
+    annex Behavior_Specification {**
+      variables
+        temp : Base_Types::Integer := 0;
+      states
+        s_start : initial complete state;
+        s_end   : complete state;
+      transitions
+        t1: s_start -[ on dispatch ]-> s_end {
+          -- 测试 forall 语句
+          forall (idx : Integer in 0 .. 4) {
+            temp := idx * 10;
+            out_val!(temp)
+          }
+        };
+        t2: s_end -[ on dispatch ]-> s_start;
+    **};
+  end test_forall_thread.i;
+
+
+  -- 3. 专门测试 do-until 语句的线程
+  thread test_do_until_thread
+  end test_do_until_thread;
+
+  thread implementation test_do_until_thread.i
+    properties
+      Dispatch_Protocol => Periodic;
+      Period => 50 ms;
+    annex Behavior_Specification {**
+      variables
+        counter : Base_Types::Integer := 0;
+      states
+        s_start : initial complete state;
+        s_end   : complete state;
+      transitions
+        t1: s_start -[ on dispatch ]-> s_end {
+          counter := 0;
+          -- 测试 do-until 语句
+          do 
+            counter := counter + 1
+          until ( counter >= 5 )
+        };
+        t2: s_end -[ on dispatch ]-> s_start;
+    **};
+  end test_do_until_thread.i;
+
+
+  -- 组装过程
+  process test_proc
+  end test_proc;
+
+  process implementation test_proc.i
+    subcomponents
+      th_for      : thread test_for_thread.i;
+      th_forall   : thread test_forall_thread.i;
+      th_do_until : thread test_do_until_thread.i;
+  end test_proc.i;
+
+  -- 顶层系统
+  system root
+  end root;
+
+  system implementation root.i
+    subcomponents
+      p : process test_proc.i;
+  end root.i;
+
+end Test_Actions2;
