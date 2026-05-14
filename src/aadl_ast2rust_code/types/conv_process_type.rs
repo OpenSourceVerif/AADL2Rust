@@ -1,4 +1,4 @@
-use crate::aadl_ast2rust_code::intermediate_ast::*;
+use aadl_intermediate::*;
 
 use crate::aadl_ast2rust_code::converter::AadlConverter;
 use crate::aadl_ast2rust_code::tool::*;
@@ -24,7 +24,6 @@ pub fn convert_process_component(
     let struct_def = StructDef {
         name: format!("{}Process", to_upper_camel_case(&comp.identifier)),
         fields, // Feature list
-        properties: temp_converter.convert_properties(ComponentRef::Type(comp)), // Property list, TODO: this seems unused, because current examples have no process properties
         generics: Vec::new(),
         derives: vec!["Debug".to_string()],
         docs: temp_converter.create_component_type_docs(comp),

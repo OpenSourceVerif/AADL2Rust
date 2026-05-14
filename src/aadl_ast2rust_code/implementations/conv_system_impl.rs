@@ -1,5 +1,5 @@
 use crate::aadl_ast2rust_code::converter::AadlConverter;
-use crate::aadl_ast2rust_code::intermediate_ast::*;
+use aadl_intermediate::*;
 
 use crate::aadl_ast2rust_code::tool::*;
 use crate::ast::aadl_ast_cj::*;
@@ -16,7 +16,6 @@ pub fn convert_system_implementation(
     let struct_def = StructDef {
         name: format!("{}System", to_upper_camel_case(&impl_.name.type_identifier)),
         fields,                 // System subcomponents
-        properties: Vec::new(), // TODO
         generics: Vec::new(),
         derives: vec!["Debug".to_string()],
         docs: vec![

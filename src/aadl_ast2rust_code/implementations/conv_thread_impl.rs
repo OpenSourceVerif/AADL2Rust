@@ -1,6 +1,7 @@
 #![allow(clippy::vec_init_then_push)]
 #![allow(clippy::single_match)]
-use crate::aadl_ast2rust_code::intermediate_ast::*;
+use crate::aadl_ast2rust_code::aadl_property::*;
+use aadl_intermediate::*;
 use crate::aadl_ast2rust_code::converter::AadlConverter;
 use crate::aadl_ast2rust_code::converter_annex::AnnexConverter;
 
@@ -53,7 +54,6 @@ pub fn convert_thread_implemenation(temp_converter: &mut AadlConverter, impl_: &
     let struct_def = StructDef {
         name: format!("{}Thread", to_upper_camel_case(&impl_.name.type_identifier)),
         fields,
-        properties: Vec::new(), // Property fields have been merged into fields
         generics: Vec::new(),
         derives: vec!["Debug".to_string()],
         docs: temp_converter.create_component_impl_docs(impl_),

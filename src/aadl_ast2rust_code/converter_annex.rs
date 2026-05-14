@@ -1,7 +1,7 @@
 // src/aadlAst2rustCode/converter_annex.rs
 // Behavior Annex code generator
 #![allow(clippy::empty_line_after_doc_comments, clippy::only_used_in_recursion)]
-use super::intermediate_ast::*;
+use aadl_intermediate::*;
 use crate::ast::aadl_ast_cj::*;
 use std::collections::HashMap;
 

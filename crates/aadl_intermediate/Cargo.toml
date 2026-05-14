@@ -1,0 +1,10 @@
+[package]
+name = "aadl_intermediate"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "aadl_intermediate"
+path = "src/lib.rs"
+
+[dependencies]

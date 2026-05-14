@@ -1,5 +1,6 @@
 // aadlAST2rustAST
-use crate::aadl_ast2rust_code::intermediate_ast::*;
+use crate::aadl_ast2rust_code::aadl_property::*;
+use aadl_intermediate::*;
 use crate::aadl_ast2rust_code::converter_annex::AnnexConverter;
 
 use crate::ast::aadl_ast_cj::*;
@@ -115,11 +116,11 @@ impl AadlConverter {
                 pkg.name.0.join("::")
             )],
             //..Default::default()
-            items: Default::default(),
+            items: Self::runtime_prelude_items(),
             attrs: Default::default(),
             vis: Visibility::Public,
-            withs: self.convert_withs(pkg),
         };
+        module.items.extend(self.convert_withs(pkg));
 
         // Handle public declarations
         if let Some(public_section) = &pkg.public_section {
@@ -143,26 +144,100 @@ impl AadlConverter {
         module
     }
 
-    fn convert_withs(&self, pkg: &Package) -> Vec<RustWith> {
-        let mut withs = Vec::new();
+    fn runtime_prelude_items() -> Vec<Item> {
+        vec![
+            Item::Raw("#![allow(unused_imports)]".to_string()),
+            Item::Raw("#![allow(non_camel_case_types)]".to_string()),
+            Item::Raw("#![allow(non_snake_case)]".to_string()),
+            Item::Raw("#![allow(unused_assignments)]".to_string()),
+            Item::Use(UseStatement {
+                path: vec!["crossbeam_channel".to_string()],
+                kind: UseKind::Nested(vec!["Receiver".to_string(), "Sender".to_string()]),
+            }),
+            Item::Use(UseStatement {
+                path: vec!["std".to_string(), "sync".to_string()],
+                kind: UseKind::Nested(vec!["Arc".to_string(), "Mutex".to_string()]),
+            }),
+            Item::Use(UseStatement {
+                path: vec!["std".to_string(), "thread".to_string()],
+                kind: UseKind::Simple,
+            }),
+            Item::Use(UseStatement {
+                path: vec!["std".to_string(), "time".to_string()],
+                kind: UseKind::Nested(vec!["Duration".to_string(), "Instant".to_string()]),
+            }),
+            Item::Use(UseStatement {
+                path: vec!["lazy_static".to_string(), "lazy_static".to_string()],
+                kind: UseKind::Simple,
+            }),
+            Item::Use(UseStatement {
+                path: vec!["std".to_string(), "collections".to_string(), "HashMap".to_string()],
+                kind: UseKind::Simple,
+            }),
+            Item::Use(UseStatement {
+                path: vec!["crate".to_string(), "common_traits".to_string()],
+                kind: UseKind::Glob,
+            }),
+            Item::Use(UseStatement {
+                path: vec!["crate".to_string(), "posix".to_string()],
+                kind: UseKind::Glob,
+            }),
+            Item::Use(UseStatement {
+                path: vec!["tokio".to_string(), "sync".to_string(), "broadcast".to_string()],
+                kind: UseKind::Nested(vec![
+                    "self".to_string(),
+                    "Sender as BcSender".to_string(),
+                    "Receiver as BcReceiver".to_string(),
+                ]),
+            }),
+            Item::Use(UseStatement {
+                path: vec!["libc".to_string()],
+                kind: UseKind::Nested(vec![
+                    "self".to_string(),
+                    "syscall".to_string(),
+                    "SYS_gettid".to_string(),
+                ]),
+            }),
+            Item::Use(UseStatement {
+                path: vec!["rand".to_string(), "Rng".to_string()],
+                kind: UseKind::Simple,
+            }),
+            Item::Use(UseStatement {
+                path: vec!["libc".to_string()],
+                kind: UseKind::Nested(vec![
+                    "pthread_self".to_string(),
+                    "sched_param".to_string(),
+                    "pthread_setschedparam".to_string(),
+                    "SCHED_FIFO".to_string(),
+                ]),
+            }),
+            Item::Raw("include!(concat!(env!(\"OUT_DIR\"), \"/aadl_c_bindings.rs\"));".to_string()),
+        ]
+    }
+
+    fn convert_withs(&self, pkg: &Package) -> Vec<Item> {
+        let mut items = Vec::new();
         for ele in pkg.visibility_decls.iter() {
             if let VisibilityDeclaration::Import { packages, property_sets: _ } = ele {
                         //println!("packages: {:?}", packages);
-                        //withs.push(RustWith { path: packages.iter().map(|p| p.to_string()).collect(), glob: true });
                         for pkg_name in packages.iter() {
                             // Key point: do not use to_string()
                             // print!("pkg0:{:?}",pkg_name.0.clone());
-                            let segments = pkg_name.0.iter().map(|s| s.to_ascii_lowercase()).collect();
-            
-                            withs.push(RustWith {
-                                path: segments,
-                                glob: true,
-                            });
+                            let module_name = pkg_name
+                                .0
+                                .iter()
+                                .map(|s| s.to_ascii_lowercase())
+                                .collect::<Vec<_>>()
+                                .join("_");
+
+                            items.push(Item::Use(UseStatement {
+                                path: vec!["crate".to_string(), module_name],
+                                kind: UseKind::Glob,
+                            }));
                         }
                     }
         }
-        //println!("withs: {:?}", withs);
-        withs
+        items
     }
     // Get the component type from an implementation
     pub fn get_component_type(&self, impl_: &ComponentImplementation) -> Option<&ComponentType> {
@@ -542,6 +617,20 @@ impl AadlConverter {
     }
 
 
+    fn some_expr(value: Expr) -> Expr {
+        Expr::Call(
+            Box::new(Expr::Path(vec!["Some".to_string()], PathType::Member)),
+            vec![value],
+        )
+    }
+
+    fn assign_statement(target: String, value: Expr) -> Statement {
+        Statement::Expr(Expr::Assign(
+            Box::new(Expr::Ident(target)),
+            Box::new(value),
+        ))
+    }
+
     pub fn create_channel_connection(&self, conn: &PortConnection, comp_name: String) -> Vec<Statement> {
         let mut stmts = Vec::new();
 
@@ -610,40 +699,27 @@ impl AadlConverter {
                     port: dst_port,
                 },
             ) => {
-                // Assign sender side
-                stmts.push(Statement::Expr(Expr::MethodCall(
-                    Box::new(Expr::Ident(format!(
-                        "{}.{}",
-                        src_comp.to_lowercase(),
-                        src_port.to_lowercase()
-                    ))),
-                    "send".to_string(), // this keyword is fixed; e.g., cnx: port the_sender.p -> the_receiver.p; the former sends, the latter receives
-                    //vec![Expr::Ident("channel.0".to_string())],
-                    // Decide whether this is a broadcast port; broadcast syntax is channel.0.clone()
-                    vec![Expr::Call(
-                        Box::new(Expr::Path(vec!["Some".to_string()], PathType::Member)),
-                        vec![if is_broadcast { Expr::MethodCall(Box::new(Expr::Ident("channel.0.clone".to_string())), "".to_string(), Vec::new()) } 
-                            else{ Expr::Ident(format!("{}.0", conn.identifier.clone())) }],
-                    )],
-                )));
+                let sender_value = if is_broadcast {
+                    Expr::MethodCall(
+                        Box::new(Expr::Ident("channel.0".to_string())),
+                        "clone".to_string(),
+                        Vec::new(),
+                    )
+                } else {
+                    Expr::Ident(format!("{}.0", conn.identifier.clone()))
+                };
+                stmts.push(Self::assign_statement(
+                    format!("{}.{}", src_comp.to_lowercase(), src_port.to_lowercase()),
+                    Self::some_expr(sender_value),
+                ));
 
                 // Assign receiver side
                 // Decide whether this is a broadcast port: if yes, skip for now; if no, generate channel.1
                 if !is_broadcast {
-                    stmts.push(Statement::Expr(Expr::MethodCall(
-                        Box::new(Expr::Ident(format!(
-                            "{}.{}",
-                            dst_comp.to_lowercase(),
-                            dst_port.to_lowercase()
-                        ))),
-                        "receive".to_string(),
-                        //vec![Expr::Ident("channel.1".to_string())],
-                        
-                        vec![Expr::Call(
-                            Box::new(Expr::Path(vec!["Some".to_string()], PathType::Member)),
-                            vec![Expr::Ident(format!("{}.1", conn.identifier.clone()))],
-                        )],
-                    )));
+                    stmts.push(Self::assign_statement(
+                        format!("{}.{}", dst_comp.to_lowercase(), dst_port.to_lowercase()),
+                        Self::some_expr(Expr::Ident(format!("{}.1", conn.identifier.clone()))),
+                    ));
                 }
                 
             }
@@ -664,34 +740,26 @@ impl AadlConverter {
                 
                 // Assign directly to the internal port variable
                 if is_broadcast {
-                    stmts.push(Statement::Expr(Expr::BinaryOp(
-                        Box::new(Expr::Ident(internal_port_name)),
-                        "=".to_string(),
-                        Box::new(Expr::Call(
-                            Box::new(Expr::Path(vec!["Some".to_string()], PathType::Member)),
-                            vec![Expr::Ident("channel.0.clone()".to_string())],
+                    stmts.push(Self::assign_statement(
+                        internal_port_name,
+                        Self::some_expr(Expr::MethodCall(
+                            Box::new(Expr::Ident("channel.0".to_string())),
+                            "clone".to_string(),
+                            Vec::new(),
                         )),
-                    )));
+                    ));
                 } else {
-                    stmts.push(Statement::Expr(Expr::BinaryOp(
-                        Box::new(Expr::Ident(internal_port_name)),
-                        "=".to_string(),
-                        Box::new(Expr::Call(
-                            Box::new(Expr::Path(vec!["Some".to_string()], PathType::Member)),
-                            vec![Expr::Ident(format!("{}.0", conn.identifier.clone()))],
-                        )),
-                    )));
+                    stmts.push(Self::assign_statement(
+                        internal_port_name,
+                        Self::some_expr(Expr::Ident(format!("{}.0", conn.identifier.clone()))),
+                    ));
                 }
                 
                 if !is_broadcast {
-                    stmts.push(Statement::Expr(Expr::MethodCall(
-                        Box::new(Expr::Ident(format!("{}.{}", dst_comp, dst_port))),
-                        "receive".to_string(),
-                        vec![Expr::Call(
-                            Box::new(Expr::Path(vec!["Some".to_string()], PathType::Member)),
-                            vec![Expr::Ident(format!("{}.1", conn.identifier.clone()))],
-                        )],
-                    )));
+                    stmts.push(Self::assign_statement(
+                        format!("{}.{}", dst_comp, dst_port),
+                        Self::some_expr(Expr::Ident(format!("{}.1", conn.identifier.clone()))),
+                    ));
                 }
             }
             (
@@ -702,15 +770,10 @@ impl AadlConverter {
                 PortEndpoint::ComponentPort(port_name),
             ) => {
                 // Handle connections from a subcomponent port to a component port (e.g., th_c.evenement -> evenement)
-                // Sender side to the thread
-                stmts.push(Statement::Expr(Expr::MethodCall(
-                    Box::new(Expr::Ident(format!("{}.{}", src_comp, src_port))),
-                    "send".to_string(),
-                    vec![Expr::Call(
-                        Box::new(Expr::Path(vec!["Some".to_string()], PathType::Member)),
-                        vec![Expr::Ident(format!("{}.0", conn.identifier.clone()))],
-                    )],
-                )));
+                stmts.push(Self::assign_statement(
+                    format!("{}.{}", src_comp, src_port),
+                    Self::some_expr(Expr::Ident(format!("{}.0", conn.identifier.clone()))),
+                ));
 
                 // Receiver side to the internal port
                 // It seems this assignment is unnecessary: it must be Rece
@@ -724,14 +787,10 @@ impl AadlConverter {
                 let internal_port_name = format!("{}Rece", port_name.to_lowercase());
                 
                 // Assign directly to the internal port variable
-                stmts.push(Statement::Expr(Expr::BinaryOp(
-                    Box::new(Expr::Ident(internal_port_name)),
-                    "=".to_string(),
-                    Box::new(Expr::Call(
-                        Box::new(Expr::Path(vec!["Some".to_string()], PathType::Member)),
-                        vec![Expr::Ident(format!("{}.1", conn.identifier.clone()))],
-                    )),
-                )));
+                stmts.push(Self::assign_statement(
+                    internal_port_name,
+                    Self::some_expr(Expr::Ident(format!("{}.1", conn.identifier.clone()))),
+                ));
             }
             // Additional endpoint combinations can be added here
             _ => {
@@ -749,14 +808,14 @@ impl AadlConverter {
             if let PortEndpoint::SubcomponentPort { subcomponent, port } = &conn.source {
                 if let Some(vercport) = self.process_broadcast_receive.get(&(subcomponent.clone(), port.clone())) {
                     for (subcomponent, port) in vercport {
-                        stmts.push(Statement::Expr(Expr::MethodCall(
-                            Box::new(Expr::Ident(format!("{}.{}", subcomponent, port))),
-                            "receive".to_string(),
-                            vec![Expr::Call(
-                                Box::new(Expr::Path(vec!["Some".to_string()], PathType::Member)),
-                                vec![Expr::Ident("channel.0.subscribe()".to_string())],
-                            )],
-                        )));
+                        stmts.push(Self::assign_statement(
+                            format!("{}.{}", subcomponent, port),
+                            Self::some_expr(Expr::MethodCall(
+                                Box::new(Expr::Ident("channel.0".to_string())),
+                                "subscribe".to_string(),
+                                Vec::new(),
+                            )),
+                        ));
                     }
                 }
             }
@@ -764,14 +823,14 @@ impl AadlConverter {
                 if self.thread_broadcast_receive.contains_key(&(proc_port.clone(), comp_name.clone())){
                     if let Some(vercport) = self.thread_broadcast_receive.get(&(proc_port.clone(), comp_name.clone())) {
                         for (subcomponent, port) in vercport {
-                            stmts.push(Statement::Expr(Expr::MethodCall(
-                                Box::new(Expr::Ident(format!("{}.{}", subcomponent, port))),
-                                "receive".to_string(),
-                                vec![Expr::Call(
-                                    Box::new(Expr::Path(vec!["Some".to_string()], PathType::Member)),
-                                    vec![Expr::Ident("channel.0.subscribe()".to_string())],
-                                )],
-                            )));
+                            stmts.push(Self::assign_statement(
+                                format!("{}.{}", subcomponent, port),
+                                Self::some_expr(Expr::MethodCall(
+                                    Box::new(Expr::Ident("channel.0".to_string())),
+                                    "subscribe".to_string(),
+                                    Vec::new(),
+                                )),
+                            ));
                         }
                     }
                 }

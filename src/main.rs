@@ -10,7 +10,7 @@ pub mod transform_annex;
 // pub mod build_project_tool;
 
 use crate::model_statistics::*;
-use aadl_ast2rust_code::intermediate_print::*;
+use aadl_intermediate::RustCodeGenerator;
 use aadl_ast2rust_code::merge_utils::*;
 use aadlight_parser::AADLParser;
 use clap::Parser as ClapParser;

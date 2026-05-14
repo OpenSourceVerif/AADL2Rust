@@ -1,6 +1,6 @@
 #![allow(clippy::single_match)]
 use crate::aadl_ast2rust_code::converter::AadlConverter;
-use crate::aadl_ast2rust_code::intermediate_ast::*;
+use aadl_intermediate::*;
 
 use crate::aadl_ast2rust_code::tool::*;
 use crate::ast::aadl_ast_cj::*;
@@ -31,7 +31,6 @@ pub fn convert_process_implementation(
     let struct_def = StructDef {
         name: format! {"{}Process",to_upper_camel_case(&impl_.name.type_identifier)},
         fields,                 // Used to obtain the subcomponents of the process
-        properties: Vec::new(), // TODO
         generics: Vec::new(),
         derives: vec!["Debug".to_string()],
         docs: vec![

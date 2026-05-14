@@ -4,7 +4,7 @@
     clippy::collapsible_match,
     clippy::vec_init_then_push
 )]
-use crate::aadl_ast2rust_code::intermediate_ast::*;
+use aadl_intermediate::*;
 use crate::aadl_ast2rust_code::tool;
 use crate::ast::aadl_ast_cj::*;
 use std::collections::HashMap;

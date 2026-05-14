@@ -1,6 +1,5 @@
 #![allow(clippy::only_used_in_recursion)]
-use super::intermediate_ast::*;
-use chrono::Local;
+use crate::intermediate_ast::*;
 
 // Rust code generator
 pub struct RustCodeGenerator {
@@ -26,94 +25,20 @@ impl RustCodeGenerator {
     pub fn generate_module_code(&mut self, module: &RustModule) -> String {
         self.buffer.clear();
 
-        // File header
-        self.writeln(&format!(
-            "// Auto-generated from AADL package: {}",
-            module.name
-        ));
-        //self.writeln("// Auto-generated Rust code derived from AADL model");
-        self.writeln(&format!(
-            "// Generation time: {}",
-            Local::now().format("%Y-%m-%d %H:%M:%S")
-        ));
-        self.writeln("");
-        self.writeln("#![allow(unused_imports)]");
-        self.writeln("#![allow(non_camel_case_types)]");
-        self.writeln("#![allow(non_snake_case)]");
-        self.writeln("#![allow(unused_assignments)]");
-        self.writeln("use crossbeam_channel::{Receiver, Sender};");
-        self.writeln("use std::sync::{Arc,Mutex};");
-        self.writeln("use std::thread;");
-        self.writeln("use std::time::{Duration, Instant};");
-        self.writeln("use lazy_static::lazy_static;");
-        self.writeln("use std::collections::HashMap;");
-        self.writeln("use crate::common_traits::*;");
-        self.writeln("use crate::posix::*;");
-        self.writeln(
-            "use tokio::sync::broadcast::{self,Sender as BcSender, Receiver as BcReceiver};",
-        );
-        self.writeln("use libc::{self, syscall, SYS_gettid};");
-        self.writeln("use rand::{Rng};");
-        self.writeln("use libc::{");
-        self.writeln("    pthread_self, sched_param, pthread_setschedparam, SCHED_FIFO,");
-        // self.writeln("    cpu_set_t, CPU_SET, CPU_ZERO, sched_setaffinity,");
-        self.writeln("};");
-        self.writeln("include!(concat!(env!(\"OUT_DIR\"), \"/aadl_c_bindings.rs\"));"); // Inject bound functions into the root module via include!
-
-        self.writeln("");
-        self.generate_withs(&module.withs);
-
-        // Add CPU affinity setup function
-        // self.writeln("// ---------------- cpu ----------------");
-        // self.writeln("fn set_thread_affinity(cpu: isize) {");
-        // self.writeln("    unsafe {");
-        // self.writeln("        let mut cpuset: cpu_set_t = std::mem::zeroed();");
-        // self.writeln("        CPU_ZERO(&mut cpuset);");
-        // self.writeln("        CPU_SET(cpu as usize, &mut cpuset);");
-        // self.writeln("        sched_setaffinity(0, std::mem::size_of::<cpu_set_t>(), &cpuset);");
-        // self.writeln("    }");
-        // self.writeln("}");
-        // self.writeln("");
-
-        // self.writeln("// ---------------- System ----------------");
-        // self.writeln("pub trait System {");
-        // self.writeln("    fn new() -> Self");
-        // self.writeln("        where Self: Sized;");
-        // self.writeln("    fn run(self);");
-        // self.writeln("}");
-        // self.writeln("");
-
-        // self.writeln("// ---------------- Process ----------------");
-        // self.writeln("pub trait Process {");
-        // self.writeln("    fn new(cpu_id: isize) -> Self");
-        // self.writeln("        where Self: Sized;");
-        // self.writeln("    fn start(self);");
-        // self.writeln("}");
-        // self.writeln("");
-
-        // self.writeln("// ---------------- Thread ----------------");
-        // self.writeln("pub trait Thread {");
-        // self.writeln("    fn new(cpu_id: isize) -> Self");
-        // self.writeln("        where Self: Sized;");
-        // self.writeln("    fn run(self);");
-        // self.writeln("}");
-        // self.writeln("");
+        for doc in &module.docs {
+            self.writeln(doc);
+        }
+        for attr in &module.attrs {
+            self.generate_attribute(attr);
+        }
+        if !module.docs.is_empty() || !module.attrs.is_empty() {
+            self.writeln("");
+        }
 
         // Generate module contents
         self.generate_items(&module.items);
 
         self.buffer.clone()
-    }
-
-    // Generate with declarations
-    fn generate_withs(&mut self, withs: &[RustWith]) {
-        for with in withs {
-            self.writeln(&format!(
-                "use crate::{}{};",
-                with.path.join("_"),
-                if with.glob { "::*" } else { "" }
-            ));
-        }
     }
 
     // Generate multiple items
@@ -126,6 +51,7 @@ impl RustCodeGenerator {
     // Generate a single item
     fn generate_item(&mut self, item: &Item) {
         match item {
+            Item::Raw(raw) => self.generate_raw(raw),
             Item::Struct(s) => self.generate_struct(s),
             Item::Enum(e) => self.generate_enum(e),
             Item::Union(u) => self.generate_union(u), // New
@@ -136,6 +62,12 @@ impl RustCodeGenerator {
             Item::Use(u) => self.generate_use(u),
             Item::Mod(m) => self.generate_nested_module(m),
             Item::LazyStatic(l) => self.generate_lazy_static(l),
+        }
+    }
+
+    fn generate_raw(&mut self, raw: &str) {
+        for line in raw.lines() {
+            self.writeln(line);
         }
     }
 
@@ -212,116 +144,13 @@ impl RustCodeGenerator {
 
         self.indent();
 
-        // 1. Generate port fields
         for field in &s.fields {
             self.generate_field(field);
         }
 
-        // Do not generate property fields for process structs
-        // if !s.name.ends_with("Process") && !s.properties.is_empty() {
-        //     self.writeln("\n    // --- AADL Properties ---");
-        //     for prop in &s.properties {
-        //         self.writeln(&format!(
-        //             "pub {}: {}, {}",
-        //             prop.name.to_lowercase(),
-        //             self.type_for_property(&prop.value),
-        //             prop.docs.join("\n")
-        //         ));
-        //     }
-        // }
         self.dedent();
         self.writeln("}");
         self.writeln("");
-
-        //self.generate_properties_impl(s);
-    }
-
-    // Generate property initialization impl block (it seems that processes have no properties by default; according to the standard they can, TODO)
-    // 2025.10.10 Moved this functionality to converter.rs; deprecated here
-    #[allow(unused)]
-    fn generate_properties_impl(&mut self, s: &StructDef) {
-        if s.properties.is_empty() {
-            return;
-        }
-
-        self.writeln(&format!("impl {} {{", s.name));
-        self.writeln("    // Create the component and initialize AADL properties");
-        self.write("    pub fn new(cpu_id: isize");
-
-        // Add parameters for fields ending with \"Shared\"
-        for field in &s.fields {
-            if let Type::Named(type_name) = &field.ty {
-                if type_name.ends_with("Shared") {
-                    self.write(&format!(
-                        ", {}: {}",
-                        field.name,
-                        self.type_to_string(&field.ty)
-                    ));
-                }
-            }
-        }
-
-        self.writeln(") -> Self {");
-        self.writeln("        Self {");
-
-        // 1. Port field initialization: special handling for cpu_id, treated as a trait
-        for field in &s.fields {
-            //println!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!field.name: {:?}", field.ty);
-            if field.name == "cpu_id" {
-                self.writeln("            cpu_id: cpu_id,");
-            } else if let Type::Named(type_name) = &field.ty {
-                if type_name.ends_with("Shared") {
-                    // Shared variable fields are initialized using the passed-in parameter
-                    self.writeln(&format!("            {}: {},", field.name, field.name));
-                } else {
-                    // Other fields are initialized to None
-                    self.writeln(&format!("            {}: None,", field.name));
-                }
-            } else {
-                // Fields of other types are initialized to None
-                self.writeln(&format!("            {}: None,", field.name));
-            }
-        }
-
-        // 2. Property field initialization
-        for prop in &s.properties {
-            let init_value = match &prop.value {
-                StruPropertyValue::Boolean(b) => b.to_string(),
-                StruPropertyValue::Integer(i) => i.to_string(),
-                StruPropertyValue::Float(f) => f.to_string(),
-                StruPropertyValue::String(s) => format!("\"{}\".to_string()", s),
-                StruPropertyValue::Duration(val, _) => val.to_string(),
-                StruPropertyValue::Range(min, max, _) => format!("({}, {})", min, max),
-                StruPropertyValue::None => "Default::default()".to_string(),
-                StruPropertyValue::Custom(s) => s.to_string(),
-            };
-            self.writeln(&format!(
-                "            {}: {}, // {}",
-                prop.name.to_lowercase(),
-                init_value,
-                prop.docs[0].trim_start_matches("// ")
-            ));
-        }
-
-        self.writeln("        }");
-        self.writeln("    }");
-        self.writeln("}");
-    }
-
-    // Infer Rust type based on property value
-    // 2025.10.10 Moved this functionality to converter.rs; deprecated here
-    #[allow(unused)]
-    fn type_for_property(&self, value: &StruPropertyValue) -> String {
-        match value {
-            StruPropertyValue::Boolean(_) => "bool".to_string(),
-            StruPropertyValue::Integer(_) => "u64".to_string(), // Mostly positive numbers, so i64 is not used
-            StruPropertyValue::Float(_) => "f64".to_string(),
-            StruPropertyValue::String(_) => "String".to_string(),
-            StruPropertyValue::Duration(_, _) => "u64".to_string(),
-            StruPropertyValue::Range(_, _, _) => "(u64, u64)".to_string(),
-            StruPropertyValue::None => "Default".to_string(),
-            StruPropertyValue::Custom(s) => s.to_string(),
-        }
     }
 
     fn generate_field(&mut self, field: &Field) {
@@ -481,26 +310,6 @@ impl RustCodeGenerator {
                 self.writeln(";");
             }
             Statement::Expr(expr) => {
-                // Handle connection-building expressions TODO
-                if let Expr::MethodCall(receiver, method, args) = expr {
-                    if method == "send" || method == "receive" {
-                        self.writeln("// build connection: ");
-                        self.write("    ");
-                        self.generate_expr(receiver);
-                        self.write(" = ");
-
-                        for (i, arg) in args.iter().enumerate() {
-                            if i > 0 {
-                                self.write(", ");
-                            }
-                            self.generate_expr(arg);
-                        }
-                        self.writeln(";");
-
-                        return;
-                    }
-                }
-                // Normal expression handling
                 self.generate_expr(expr);
                 self.writeln(";");
             }

@@ -1,4 +1,4 @@
-// src/ir/intermediate_ast.rs
+// crates/aadl_intermediate/src/intermediate_ast.rs
 
 /// Lightweight Rust abstract syntax tree (module level)
 #[derive(Debug, Clone)]
@@ -8,20 +8,12 @@ pub struct RustModule {
     pub items: Vec<Item>,
     pub attrs: Vec<Attribute>, // #[attributes]
     pub vis: Visibility,       // controls the visibility of the module
-    pub withs: Vec<RustWith>,  // with declarations
-}
-/// with declaration
-#[derive(Debug, Clone)]
-pub struct RustWith {
-    /// e.g. crate::aadlbook_devices
-    pub path: Vec<String>,
-    /// Whether to use glob import (*)
-    pub glob: bool,
 }
 
 /// Module item definitions
 #[derive(Debug, Clone)]
 pub enum Item {
+    Raw(String), // raw Rust item or crate-level directive
     Struct(StructDef),
     Enum(EnumDef),
     Union(UnionDef),
@@ -38,8 +30,7 @@ pub enum Item {
 #[derive(Debug, Clone)]
 pub struct StructDef {
     pub name: String,
-    pub fields: Vec<Field>,            //(corresponding to AADL ports)
-    pub properties: Vec<StruProperty>, // store properties
+    pub fields: Vec<Field>,
     pub generics: Vec<GenericParam>,
     pub derives: Vec<String>, // #[derive(...)]
     pub docs: Vec<String>,
@@ -51,7 +42,6 @@ pub struct StructDef {
 pub struct UnionDef {
     pub name: String,
     pub fields: Vec<Field>,            // union fields
-    pub properties: Vec<StruProperty>, // store properties
     pub generics: Vec<GenericParam>,
     pub derives: Vec<String>, // #[derive(...)]
     pub docs: Vec<String>,
@@ -110,12 +100,6 @@ pub struct TypeAlias {
     pub docs: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
-pub struct StruProperty {
-    pub name: String,
-    pub value: StruPropertyValue,
-    pub docs: Vec<String>, // property documentation
-}
 // ========== Basic type definitions ========== //
 
 /// Type representation
@@ -150,7 +134,7 @@ pub enum Expr {
     Loop(Box<Block>),
     Await(Box<Expr>),
     Closure(Vec<String>, Box<Expr>),
-    BuilderChain(Vec<BuilderMethod>), // represents builder-style chained calls (e.g., when a process creates threads)
+    BuilderChain(Vec<BuilderMethod>), // represents builder-style chained calls
     Unsafe(Box<Block>),               // unsafe expression support
     If {
         condition: Box<Expr>,
@@ -202,18 +186,6 @@ pub enum Literal {
     Str(String),
     Bool(bool),
     Char(char),
-}
-
-#[derive(Debug, Clone)]
-pub enum StruPropertyValue {
-    Integer(i64),
-    Float(f64),
-    String(String),
-    Boolean(bool),
-    Duration(u64, String),           // (value, unit)
-    Range(i64, i64, Option<String>), // (min, max, unit)
-    None,                            // indicates no property value
-    Custom(String),                  // custom type (e.g., Shared)
 }
 
 /// Code block

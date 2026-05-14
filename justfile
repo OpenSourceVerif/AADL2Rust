@@ -23,4 +23,3 @@ clean:
 
 code:
     powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/loc.ps1
-

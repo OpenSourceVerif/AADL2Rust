@@ -1,4 +1,4 @@
-use super::intermediate_ast::*;
+use aadl_intermediate::*;
 
 /// Merge and deduplicate StructDef items in a RustModule
 pub fn merge_item_defs(module: RustModule) -> RustModule {
@@ -31,8 +31,6 @@ pub fn merge_item_defs(module: RustModule) -> RustModule {
                             // println!("Merging duplicate struct: {}", name);
                             // println!("Struct definition to be removed at index: {}", j);
                             // println!("Source struct field count: {}", source.fields.len());
-                            // println!("Source struct property count: {}", source.properties.len());
-
                             // Create a full clone of source to avoid borrowing issues
                             let source_clone = source.clone();
                             merge_single_struct(target, &source_clone);
@@ -59,7 +57,6 @@ pub fn merge_item_defs(module: RustModule) -> RustModule {
         items,
         attrs: module.attrs,
         vis: module.vis,
-        withs: module.withs,
     }
 }
 
@@ -77,20 +74,6 @@ fn merge_single_struct(target: &mut StructDef, source: &StructDef) {
     //     original_field_count,
     //     source.fields.len(),
     //     target.fields.len()
-    // );
-
-    // Merge properties (deduplicate by name)
-    let _original_prop_count = target.properties.len();
-    for src_prop in source.properties.iter().cloned() {
-        if !target.properties.iter().any(|p| p.name == src_prop.name) {
-            target.properties.push(src_prop);
-        }
-    }
-    // println!(
-    //     "Merged properties: original {} + added {} = now {}",
-    //     original_prop_count,
-    //     source.properties.len(),
-    //     target.properties.len()
     // );
 
     // Merge generics (deduplicate by name)

@@ -1,5 +1,6 @@
-use crate::aadl_ast2rust_code::intermediate_ast::*;
+use aadl_intermediate::*;
 
+use crate::aadl_ast2rust_code::aadl_property::*;
 use crate::aadl_ast2rust_code::converter::AadlConverter;
 use crate::aadl_ast2rust_code::tool::*;
 use crate::ast::aadl_ast_cj::*;
@@ -75,7 +76,6 @@ pub fn convert_thread_component(
     let struct_def = StructDef {
         name: struct_name,
         fields,                 // Feature list
-        properties: Vec::new(), // Property fields have been merged into `fields`
         generics: Vec::new(),
         derives: vec!["Debug".to_string()],
         docs: temp_converter.create_component_type_docs(comp),

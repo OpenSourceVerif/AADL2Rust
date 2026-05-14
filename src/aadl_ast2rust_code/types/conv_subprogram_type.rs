@@ -1,5 +1,5 @@
 #![allow(clippy::collapsible_match)]
-use crate::aadl_ast2rust_code::intermediate_ast::*;
+use aadl_intermediate::*;
 
 use crate::aadl_ast2rust_code::converter::AadlConverter;
 use crate::ast::aadl_ast_cj::*;
@@ -266,7 +266,6 @@ fn generate_c_function_wrapper(
             items: module_items,
             attrs: Default::default(),
             vis: Visibility::Public,
-            withs: Vec::new(),
         };
         items.push(Item::Mod(Box::new(module)));
     }

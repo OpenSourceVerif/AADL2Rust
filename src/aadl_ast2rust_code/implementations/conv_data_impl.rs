@@ -1,4 +1,4 @@
-use crate::aadl_ast2rust_code::intermediate_ast::*;
+use aadl_intermediate::*;
 use crate::ast::aadl_ast_cj::*;
 use std::collections::HashMap;
 
@@ -367,7 +367,6 @@ fn determine_struct_impl(
     StructDef {
         name: impl_.name.type_identifier.clone(),
         fields,
-        properties: vec![],
         generics: vec![],
         derives: vec!["Debug".to_string(), "Clone".to_string()],
         docs: vec![format!("// AADL Struct: {}", impl_.name.type_identifier)],
@@ -434,7 +433,6 @@ fn determine_union_impl(
     UnionDef {
         name: impl_.name.type_identifier.clone(),
         fields,
-        properties: vec![],
         generics: vec![],
         derives: vec!["Debug".to_string(), "Clone".to_string()],
         docs: vec![format!("// AADL Union: {}", impl_.name.type_identifier)],

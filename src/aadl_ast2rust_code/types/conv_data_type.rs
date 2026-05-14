@@ -1,5 +1,5 @@
 #![allow(clippy::collapsible_match)]
-use crate::aadl_ast2rust_code::intermediate_ast::*;
+use aadl_intermediate::*;
 use crate::ast::aadl_ast_cj::*;
 use std::collections::HashMap;
 
@@ -360,7 +360,6 @@ fn determine_struct_type(
     StructDef {
         name: comp.identifier.clone(),
         fields,
-        properties: vec![],
         generics: vec![],
         derives: vec!["Debug".to_string(), "Clone".to_string()],
         docs: vec![format!("// AADL Struct: {}", comp.identifier)],
@@ -466,7 +465,6 @@ fn determine_union_type(
     UnionDef {
         name: comp.identifier.clone(),
         fields,
-        properties: vec![],
         generics: vec![],
         derives: vec!["Debug".to_string(), "Clone".to_string()],
         docs: vec![format!("// AADL Union: {}", comp.identifier)],

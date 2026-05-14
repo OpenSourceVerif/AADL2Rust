@@ -1,4 +1,4 @@
-use crate::aadl_ast2rust_code::intermediate_ast::*;
+use aadl_intermediate::*;
 
 use crate::aadl_ast2rust_code::converter::AadlConverter;
 use crate::aadl_ast2rust_code::tool::*;
@@ -25,7 +25,6 @@ pub fn convert_device_component(temp_converter: &AadlConverter, comp: &Component
     let struct_def = StructDef {
         name: struct_name.clone(),
         fields,
-        properties: Vec::new(),
         generics: Vec::new(),
         derives: vec!["Debug".to_string()],
         docs: vec![format!("// AADL Device: {}", comp.identifier)],

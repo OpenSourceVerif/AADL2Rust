@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+aadl_intermediate = { path = "crates/aadl_intermediate" }
+
 pest = "2.8"
 pest_derive = "2.8"
 pest_debugger = "2.8"
