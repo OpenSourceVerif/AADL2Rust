@@ -67,7 +67,7 @@ public
     P : process P.impl;
     Proc : processor Proc.RR_NoPreemption;
   properties
-    Actual_Processor_Binding => reference (Proc) applies to P;
+    Actual_Processor_Binding => (reference (Proc)) applies to P;
   end RR.impl_nopreempt;
 
   system RR2
@@ -78,7 +78,7 @@ public
     P : process P.impl;
     Proc : processor Proc.RR_Preemption;
   properties
-    Actual_Processor_Binding => reference (Proc) applies to P;
+    Actual_Processor_Binding => (reference (Proc)) applies to P;
   end RR2.impl_preempt;
 
 end Round_Robin;

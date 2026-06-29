@@ -162,8 +162,8 @@ public
 --    Z5:bus access the_bus -> CPU.ETH;
     Z6:port pr_A.Alpha -> pr_B.Beta;
   properties
-    Actual_Processor_Binding => reference (CPU_A) applies to pr_A;
-    Actual_Processor_Binding => reference (CPU_B) applies to pr_B;
+    Actual_Processor_Binding => (reference (CPU_A)) applies to pr_A;
+    Actual_Processor_Binding => (reference (CPU_B)) applies to pr_B;
 
     -- Actual_Connection_Binding => (reference (the_bus)) applies to Z6;
     -- actual_processor_binding => (reference (CPU_A)) applies to Device_A;

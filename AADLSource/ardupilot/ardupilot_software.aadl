@@ -373,7 +373,7 @@ public
   -- B2 : port XYZ.Out_Z -> Shield.Z_in;
   -- B3 : port GPS.PPS -> Shield.ada_gps;
   properties
-    Actual_Processor_Binding => reference (CPU_A) applies to process_Ardupilot;
+    Actual_Processor_Binding => (reference (CPU_A)) applies to process_Ardupilot;
   end Ardupilot_Shield.impl;
   
 end Ardupilot_Software;

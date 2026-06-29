@@ -1414,6 +1414,8 @@ pub mod aadl_ast_cj {
         pub is_constant: bool,
 
         pub value: PropertyValue,
+
+        pub applies_to: Option<Vec<String>>,
     }
     #[derive(Debug, Clone)]
     pub struct PropertyIdentifier {
@@ -1459,7 +1461,6 @@ pub mod aadl_ast_cj {
         Reference(ReferenceTerm),
         //Record(RecordTerm),
         //Computed(ComputedTerm),
-        Apply(ApplyTerm), //contained_property_association
     }
 
     #[derive(Debug, Clone)]
@@ -1533,16 +1534,10 @@ pub mod aadl_ast_cj {
     #[derive(Debug, Clone)]
     pub struct ReferenceTerm {
         pub identifier: String,
-        pub applies_to: Option<String>,
     }
 
     #[derive(Debug, Clone)]
     pub struct ComponentClassifierTerm {
         pub unique_component_classifier_reference: UniqueComponentClassifierReference,
-    }
-    #[derive(Debug, Clone)]
-    pub struct ApplyTerm {
-        pub number: String,
-        pub applies_to: String,
     }
 } //end mod aadl_ast_cj

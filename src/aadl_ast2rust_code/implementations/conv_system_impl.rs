@@ -144,12 +144,28 @@ fn extract_processor_bindings(impl_: &ComponentImplementation) -> Vec<(String, S
         for property in properties {
             if let Property::BasicProperty(basic_prop) = property {
                 if basic_prop.identifier.name.to_lowercase() == "actual_processor_binding" {
-                    if let PropertyValue::Single(PropertyExpression::Reference(ref_term)) =
-                        &basic_prop.value
-                    {
-                        if let Some(applies_to) = &ref_term.applies_to {
-                            // Format: (process_name, CPU_identifier)
-                            bindings.push((applies_to.clone(), ref_term.identifier.clone()));
+                    let references = match &basic_prop.value {
+                        PropertyValue::Single(PropertyExpression::Reference(reference)) => {
+                            vec![reference]
+                        }
+                        PropertyValue::List(elements) => elements
+                            .iter()
+                            .filter_map(|element| match element {
+                                PropertyListElement::Value(PropertyExpression::Reference(
+                                    reference,
+                                )) => Some(reference),
+                                _ => None,
+                            })
+                            .collect(),
+                        _ => Vec::new(),
+                    };
+
+                    if let Some(applies_to) = &basic_prop.applies_to {
+                        if let Some(reference) = references.first() {
+                            for target in applies_to {
+                                // Format: (process_name, CPU_identifier)
+                                bindings.push((target.clone(), reference.identifier.clone()));
+                            }
                         }
                     }
                 }

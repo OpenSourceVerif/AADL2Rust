@@ -28,7 +28,7 @@ end speed;
 data picture 
 properties
 	data_model::data_representation => array;
-	data_model::base_type => classifier (Base_Types::Integer);
+	data_model::base_type => (classifier (Base_Types::Integer));
 	data_model::dimension => (4, 3);
 end picture; 
 

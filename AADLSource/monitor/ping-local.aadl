@@ -46,7 +46,7 @@ subcomponents
   Node_A : process A.Impl;
   CPU : processor the_processor;
 properties
-  actual_processor_binding => reference (CPU_A) applies to Node_A;
+  actual_processor_binding => (reference (CPU_A)) applies to Node_A;
 end PING.Impl;
 
 -- system implementation PING.Xenomai

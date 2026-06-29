@@ -14,7 +14,7 @@ public
 		-- connections
 		-- 	sp: port setpoint -> tcp.setpoint;
 		properties
-			Actual_Processor_Binding => reference (proc) applies to tcp;
+			Actual_Processor_Binding => (reference (proc)) applies to tcp;
 		-- annex resolute {**
 		-- 	check CASE_Tools
 		-- **};

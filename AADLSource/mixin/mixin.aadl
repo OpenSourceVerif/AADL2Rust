@@ -178,9 +178,9 @@ public
     C1: port Driver.Out_1 -> Mix_1.Port_1;
     C2: port Driver.Out_2 -> Mix_2.Port_2;
   properties
-    Actual_Processor_Binding => reference (CPU) applies to Mix_1;
-    Actual_Processor_Binding => reference (CPU) applies to Mix_2;
-    Actual_Processor_Binding => reference (CPU) applies to Driver;
+    Actual_Processor_Binding => (reference (CPU)) applies to Mix_1;
+    Actual_Processor_Binding => (reference (CPU)) applies to Mix_2;
+    Actual_Processor_Binding => (reference (CPU)) applies to Driver;
   end Demo.impl;
 
 end Mixin;

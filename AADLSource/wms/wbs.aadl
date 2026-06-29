@@ -75,9 +75,9 @@ public
 			c3: port tire_p.rear_inflate -> rear_p.inflate;
 		properties
 			-- Actual_Processor_Binding => reference (proc) applies to tire_p, front_p, rear_p;
-			Actual_Processor_Binding => reference (proc) applies to tire_p;
-			Actual_Processor_Binding => reference (proc) applies to front_p;
-			Actual_Processor_Binding => reference (proc) applies to rear_p;
+			Actual_Processor_Binding => (reference (proc)) applies to tire_p;
+			Actual_Processor_Binding => (reference (proc)) applies to front_p;
+			Actual_Processor_Binding => (reference (proc)) applies to rear_p;
 			-- HAMR::Platform => (JVM, Linux, seL4);
 			-- HAMR::Default_Bit_Width => 32;
 			-- HAMR::Default_Max_Sequence_Size => 1;

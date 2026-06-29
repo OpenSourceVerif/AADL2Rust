@@ -7,15 +7,15 @@ public
 data One_Dimension_Array
 	properties
 		Data_Model::Data_Representation => Array;
-		Data_Model::Base_Type => classifier (Base_Types::Integer);
-		Data_Model::Dimension => 42;
+		Data_Model::Base_Type => (classifier (Base_Types::Integer));
+		Data_Model::Dimension => (42);
 end One_Dimension_Array;
 
 
 data Two_Dimensions_Array
 	properties
 		Data_Model::Data_Representation => Array;
-		Data_Model::Base_Type => classifier (Base_Types::Integer);
+		Data_Model::Base_Type => (classifier (Base_Types::Integer));
 		Data_Model::Dimension => (74, 75);
 end Two_Dimensions_Array;
 

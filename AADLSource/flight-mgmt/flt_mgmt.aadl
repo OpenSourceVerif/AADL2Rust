@@ -52,7 +52,7 @@ public
     CPU  : processor the_processor;
     fltMgmt : process Mgmt_T.RS;
   properties
-    Actual_Processor_Binding => reference (CPU) applies to fltMgmt;
+    Actual_Processor_Binding => (reference (CPU)) applies to fltMgmt;
   end Flight_Mgmt.local;
 
   -- system implementation Flight_Mgmt.Xenomai

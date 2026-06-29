@@ -65,7 +65,7 @@ public
   --   B11:bus access vme <-> rs_6000.req_access_vme;
 
   properties
-    Actual_processor_binding => reference(rs_6000) applies to prs_PSC;
+    Actual_processor_binding => (reference (rs_6000)) applies to prs_PSC;
 
   end sys_mars_pathfinder.impl;
 

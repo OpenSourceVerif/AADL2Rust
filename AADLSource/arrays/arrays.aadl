@@ -49,7 +49,7 @@ public
 			proc: process PC_Proc.Impl;
 			proc_hw: processor PC_Processor.Impl;
 		properties
-     		Actual_processor_binding => reference (proc_hw) applies to proc;
+			Actual_processor_binding => (reference (proc_hw)) applies to proc;
 	end PC_Sys.Impl;
 
 	process PC_Proc

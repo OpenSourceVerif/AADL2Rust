@@ -124,7 +124,7 @@ public
     ptest : process node_a.impl;
     cpu_rm : processor cpurm.impl;
   properties
-    Actual_Processor_Binding => reference (cpu_rm) applies to ptest;
+    Actual_Processor_Binding => (reference (cpu_rm)) applies to ptest;
   end ptest.impl;
 
   -- system implementation ptest.rtems_impl extends ptest.impl

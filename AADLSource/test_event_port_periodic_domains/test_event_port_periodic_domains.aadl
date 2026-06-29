@@ -114,8 +114,8 @@ public
 		connections
 			data_interconnect : port src_process.emit -> dst_process.consume;
 		properties
-			Actual_Processor_Binding => reference (proc) applies to src_process;
-			Actual_Processor_Binding => reference (proc) applies to dst_process;
+			Actual_Processor_Binding => (reference (proc)) applies to src_process;
+			Actual_Processor_Binding => (reference (proc)) applies to dst_process;
 			-- HAMR::Platform => (seL4_TB, seL4_Only);
 		--annex resolute {**
 		--	check CASE_Tools

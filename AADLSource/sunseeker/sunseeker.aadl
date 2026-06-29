@@ -265,7 +265,7 @@ subcomponents
 
   Platform: processor LEON_Type.LEON;
 properties
-  Actual_Processor_Binding => reference (Platform) applies to Sunseeker;
+  Actual_Processor_Binding => (reference (Platform)) applies to Sunseeker;
 end Sunseekercontrolsystem_Type.Local;
 
 end sunseeker;

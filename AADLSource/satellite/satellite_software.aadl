@@ -28,7 +28,7 @@ with satellite_hardware;
     --   C6: bus access PLB -> ERC32.PLB_bus_connected;
          
     properties
-      Actual_Processor_Binding =>  reference (ERC32) applies to OBSW;
+      Actual_Processor_Binding =>  (reference (ERC32)) applies to OBSW;
       -- Actual_Memory_Binding =>  (reference (ram)) applies to OBSW;
       
   end OBMU.Impl;

@@ -222,11 +222,11 @@ public
     conn3: port proc_controle.comm_servo_droit  -> proc_servomoteur_droit.ordre;
     conn4: port proc_controle.comm_servo_gauche -> proc_servomoteur_gauche.ordre;
   properties
-    actual_processor_binding => reference (CPU1) applies to proc_capteur_droit;
-    actual_processor_binding => reference (CPU1) applies to proc_capteur_gauche;
-    actual_processor_binding => reference (CPU1) applies to proc_controle;
-    actual_processor_binding => reference (CPU1) applies to proc_servomoteur_droit;
-    actual_processor_binding => reference (CPU1) applies to proc_servomoteur_gauche;
+    actual_processor_binding => (reference (CPU1)) applies to proc_capteur_droit;
+    actual_processor_binding => (reference (CPU1)) applies to proc_capteur_gauche;
+    actual_processor_binding => (reference (CPU1)) applies to proc_controle;
+    actual_processor_binding => (reference (CPU1)) applies to proc_servomoteur_droit;
+    actual_processor_binding => (reference (CPU1)) applies to proc_servomoteur_gauche;
   end robot.i;
 
 end Robot_BA;

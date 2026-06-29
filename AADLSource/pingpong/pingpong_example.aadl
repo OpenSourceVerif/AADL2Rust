@@ -49,7 +49,7 @@ public
 
   properties
     Actual_processor_binding => 
-      reference (CPU) applies to pingpong_proc;
+      (reference (CPU)) applies to pingpong_proc;
   end PingPong_sys.Impl;
 
 

@@ -66,7 +66,7 @@ public
     cpptest : process node_a.impl;
     cpu_rm : processor cpurm.impl;
   properties
-    Actual_Processor_Binding => reference (cpu_rm) applies to cpptest;
+    Actual_Processor_Binding => (reference (cpu_rm)) applies to cpptest;
   end cpp_test.impl;
 
   -- system implementation cpp_test.Xenomai

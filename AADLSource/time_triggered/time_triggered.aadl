@@ -205,7 +205,7 @@ public
     node_a : process node_a.impl;
     cpurm	   : processor cpurm;
   properties
-    Actual_Processor_Binding => reference (cpurm) applies to node_a;
+    Actual_Processor_Binding => (reference (cpurm)) applies to node_a;
   end tt.impl;
 
 end Time_Triggered;

@@ -74,7 +74,7 @@ public
 		-- 	HAMR::Bit_Codec_Raw_Connections => true;
 			CPU : processor CPU.Impl;
 		properties
-     		Actual_processor_binding => reference (CPU) applies to proc;
+			Actual_processor_binding => (reference (CPU)) applies to proc;
 	end Bit_Codec_Sys.Impl;
 
 	process Bit_Codec_Proc

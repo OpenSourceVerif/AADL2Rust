@@ -20,7 +20,7 @@ public
   properties
     source_language => (C);
     source_name     => "sensor_emulator";
-    source_text     => "functions.c";
+    source_text     => ("functions.c");
   end sensorspg;
 
   subprogram actuatorspg
@@ -29,7 +29,7 @@ public
   properties
     source_language => (C);
     source_name     => "actuator_emulator";
-    source_text     => "functions.c";
+    source_text     => ("functions.c");
   end actuatorspg;
 
   -- subprogram step1spg
@@ -47,7 +47,7 @@ public
   properties
     source_language => (C);
     source_name     => "spg1_in";
-    source_text     => "functions.c";
+    source_text     => ("functions.c");
   end step1spg_in;
 
   subprogram step1spg_out
@@ -56,7 +56,7 @@ public
   properties
     source_language => (C);
     source_name     => "spg1_out";
-    source_text     => "functions.c";
+    source_text     => ("functions.c");
   end step1spg_out;
 
   -- subprogram step2spg
@@ -74,7 +74,7 @@ public
   properties
     source_language => (C);
     source_name     => "spg2_in";
-    source_text     => "functions.c";
+    source_text     => ("functions.c");
   end step2spg_in;
 
   subprogram step2spg_out
@@ -83,7 +83,7 @@ public
   properties
     source_language => (C);
     source_name     => "spg2_out";
-    source_text     => "functions.c";
+    source_text     => ("functions.c");
   end step2spg_out;
 
   -- subprogram step3spg
@@ -101,7 +101,7 @@ public
   properties
     source_language => (C);
     source_name     => "spg3_in";
-    source_text     => "functions.c";
+    source_text     => ("functions.c");
   end step3spg_in;
 
   subprogram step3spg_out
@@ -110,7 +110,7 @@ public
   properties
     source_language => (C);
     source_name     => "spg3_out";
-    source_text     => "functions.c";
+    source_text     => ("functions.c");
   end step3spg_out;
 
   -------------
@@ -456,7 +456,7 @@ public
     CPU_A: processor singleCPU.basic;
     latency: process singleProcess.impl;
   properties
-    Actual_Processor_Binding => reference (CPU_A) applies to latency;
+    Actual_Processor_Binding => (reference (CPU_A)) applies to latency;
   end topsystem.local;
 
   -- system implementation topsystem.Xenomai

@@ -129,7 +129,12 @@ property_association = {
     ( "::" ~ identifier )? ~
     property_operator ~
     constant? ~ property_value ~
+    applies_to_clause? ~
     ";"
+}
+
+applies_to_clause = {
+    "applies" ~ "to" ~ qualified_identifier ~ ("," ~ qualified_identifier)*
 }
 
 property_operator = { "=>" | "+=>" }
@@ -137,22 +142,20 @@ property_operator = { "=>" | "+=>" }
 constant = { "constant" }
 
 property_value = {
-    apply_value |
     list_value |
     range_value | 
     literal_value | 
     reference_value |
     component_classifier_value
 }
-apply_value = { number ~ "applies" ~ "to" ~ qualified_identifier } //contained_property_association
-literal_value = { (number | enum_value | string_literal | boolean  ) ~ unit? } 
+literal_value = { (number | enum_value | string_literal | boolean  ) ~ (!"applies" ~ unit)? }
 range_value = { 
     number ~ WHITESPACE* ~ unit? ~ WHITESPACE* ~ 
     ".." ~ WHITESPACE* ~ 
     (number | identifier) ~ WHITESPACE* ~ unit? 
 }
-list_value = { "(" ~ property_value ~ ("," ~ property_value)* ~ ")" }
-reference_value = { "reference" ~ "(" ~ qualified_identifier ~ ")" ~ ( "applies" ~ "to" ~ qualified_identifier )? }
+list_value = { "(" ~ (property_value ~ ("," ~ property_value)*)? ~ ")" }
+reference_value = { "reference" ~ "(" ~ qualified_identifier ~ ")" }
 component_classifier_value = { "classifier" ~ "(" ~ qualified_identifier ~ ")" }
 
 sign = { "+" | "-" }

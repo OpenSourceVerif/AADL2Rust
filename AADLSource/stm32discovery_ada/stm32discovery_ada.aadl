@@ -12,7 +12,7 @@ public
   properties
     Source_Language => (C);
     Source_Name     => "Do_Blink";
-    Source_Text     => "blink.c";
+    Source_Text     => ("blink.c");
   end Blink;
 
   thread Task
@@ -49,7 +49,7 @@ public
     node_a : process node_a.impl;
     cpu	   : processor Cortex_M4;
   properties
-    Actual_Processor_Binding => reference (cpu) applies to node_a;
+    Actual_Processor_Binding => (reference (cpu)) applies to node_a;
   end blinky.impl;
 
 end STM32Discovery_Ada;

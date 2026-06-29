@@ -97,7 +97,7 @@ public
     node_a : process node_a.impl;
     cpurm : processor cpurm.impl;
   properties
-    Actual_Processor_Binding => reference (cpurm) applies to node_a;
+    Actual_Processor_Binding => (reference (cpurm)) applies to node_a;
   end lua.impl;
 
 end test_lua;

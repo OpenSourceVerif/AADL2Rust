@@ -100,7 +100,7 @@ public
     --node_b : process node_b.impl;
     cpu1	   : processor cpu1.impl;
   properties
-    Actual_Processor_Binding => reference (cpu1) applies to node_a;
+    Actual_Processor_Binding => (reference (cpu1)) applies to node_a;
   end rmssys.impl;
 
 end RMSAadl;

@@ -174,7 +174,7 @@ public
     P1           : processor the_processor;
     GNC_TMTC_POS : process Toy_Example_Proc.Impl;
   properties
-    Actual_Processor_Binding => reference (P1) applies to GNC_TMTC_POS;
+    Actual_Processor_Binding => (reference (P1)) applies to GNC_TMTC_POS;
   end toy_example.native;
 
 end Toy_Example_NoWrapper;

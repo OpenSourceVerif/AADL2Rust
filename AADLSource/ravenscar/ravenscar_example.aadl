@@ -249,8 +249,8 @@ public
   connections
     C_Glob : port Sim.External_Interrupt -> WoM.External_Interrupt_Depository;
   properties
-    Actual_Processor_Binding => reference (CPU_1) applies to WoM;
-    Actual_Processor_Binding => reference (CPU_1) applies to Sim;
+    Actual_Processor_Binding => (reference (CPU_1)) applies to WoM;
+    Actual_Processor_Binding => (reference (CPU_1)) applies to Sim;
   end Case_Study.LEON_Local;
 
 end Ravenscar_Example;

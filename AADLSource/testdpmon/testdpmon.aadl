@@ -66,7 +66,7 @@ public
 			proc: processor proc.impl;
 			testdpmon: process top_process.impl;
 		properties
-			Actual_Processor_Binding => reference (proc) applies to testdpmon;
+			Actual_Processor_Binding => (reference (proc)) applies to testdpmon;
 			-- HAMR::PLatform => (seL4_TB, seL4_Only);
 		-- annex resolute {**
 		-- 	check CASE_Tools

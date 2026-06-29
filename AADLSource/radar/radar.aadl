@@ -83,7 +83,7 @@ subcomponents
   -- A9:BUS ACCESS VME -> RAM.VME;
 properties
   -- Actual_Memory_Binding => (reference (ram)) applies to main;
-  Actual_Processor_Binding => reference (cpu) applies to main;
+  Actual_Processor_Binding => (reference (cpu)) applies to main;
 end radar.simple;
 
 -- The antenna device simulates radar environment.

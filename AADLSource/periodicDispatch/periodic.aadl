@@ -12,7 +12,7 @@ public
 			SW : process SW.Impl;
 		properties
 			-- HAMR::Platform => (seL4_TB);
-			Actual_Processor_Binding => reference (PROC) applies to SW;
+			Actual_Processor_Binding => (reference (PROC)) applies to SW;
 	end Critical.Impl;
 		
 	processor HW_Proc

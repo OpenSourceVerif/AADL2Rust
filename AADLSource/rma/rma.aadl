@@ -16,14 +16,14 @@ public
   properties
     source_language => (C);
     source_name     => "user_hello_spg_1";
-    source_text     => "hello.c";
+    source_text     => ("hello.c");
   end Hello_Spg_1;
 
   subprogram Hello_Spg_2
   properties
     source_language => (C);
     source_name     => "user_hello_spg_2";
-    source_text     => "hello.c";
+    source_text     => ("hello.c");
   end Hello_Spg_2;
 
   -------------
@@ -100,8 +100,8 @@ public
     --node_b : process node_b.impl;
     cpu1	   : processor cpu1.impl;
   properties
-    Actual_Processor_Binding => reference (cpu1) applies to node_a.Task1;
-    Actual_Connection_Binding => reference (cpu1) applies to node_a.Task2;
+    Actual_Processor_Binding => (reference (cpu1)) applies to node_a.Task1;
+    Actual_Connection_Binding => (reference (cpu1)) applies to node_a.Task2;
   end rma.impl;
 
 end RMAAadl;

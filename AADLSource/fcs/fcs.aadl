@@ -395,7 +395,7 @@ public
   -- flows
   --   etef1 : end to end flow operator.f1 -> V13 -> node_a.f1 -> V14 -> platform.f1 { latency => 40 ms .. 90 ms;};
   properties
-    Actual_Processor_Binding => reference (cpu_rm) applies to node_a;
+    Actual_Processor_Binding => (reference (cpu_rm)) applies to node_a;
     -- Actual_Connection_Binding => (reference (i2c)) applies to V13;
     -- Actual_Connection_Binding => (reference (i2c)) applies to V14;
     -- Actual_Connection_Binding => (reference (i2c)) applies to V15;

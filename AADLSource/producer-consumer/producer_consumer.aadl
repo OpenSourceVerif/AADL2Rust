@@ -267,7 +267,7 @@ public
     prodr_cons : process singleProcess.Impl;
     CPU_A : processor the_processor.i;
   properties
-    actual_processor_binding => reference (CPU_A) applies to prodr_cons;
+    actual_processor_binding => (reference (CPU_A)) applies to prodr_cons;
   end PC_Simple.Local;
 
   -----------------------------------------------------------------------------

@@ -117,9 +117,9 @@ public
   --   C1: port  Clock_Device.ISR_Out -> Ticker_Display.ISR_In;
     C1: port clock_driver.ISR_Out -> ticker_display.ISR_In;
   properties
-    Actual_Processor_Binding => reference (CPU) applies to ticker_display;
+    Actual_Processor_Binding => (reference (CPU)) applies to ticker_display;
     -- Actual_Processor_Binding => reference (CPU) applies to Clock_Device;
-    Actual_Processor_Binding => reference (cpu) applies to clock_driver;
+    Actual_Processor_Binding => (reference (cpu)) applies to clock_driver;
   end Ticker_System.impl;
 
 end ISR;

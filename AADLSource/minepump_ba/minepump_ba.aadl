@@ -323,7 +323,7 @@ public
     Software : process MinePump_Software.impl;
     Hardware : processor CPU;
   properties
-    Actual_Processor_Binding => reference (Hardware) applies to Software;
+    Actual_Processor_Binding => (reference (Hardware)) applies to Software;
   end MinePump.impl;
 
 end MinePump_BA;

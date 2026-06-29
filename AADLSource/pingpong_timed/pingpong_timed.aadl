@@ -45,7 +45,7 @@ public
     CPU : processor the_processor.Impl;
 
   properties
-     Actual_processor_binding => reference (CPU) applies to Node_A;
+     Actual_processor_binding => (reference (CPU)) applies to Node_A;
   end PING.Local;
 
 

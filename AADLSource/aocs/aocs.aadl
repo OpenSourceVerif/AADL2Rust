@@ -182,7 +182,7 @@ public
     -- DMA_Cnx27 : port main.torque_command -> RW.RW_data;
     -- DMA_Cnx28 : port main.force_command -> THU.THU_data;
   properties
-    Actual_Processor_Binding => reference (cpu) applies to main;
+    Actual_Processor_Binding => (reference (cpu)) applies to main;
     -- Actual_Connection_Binding => (reference (DMA)) applies to DMA_Cnx1;
     -- Actual_Connection_Binding => (reference (DMA)) applies to DMA_Cnx2;
     -- Actual_Connection_Binding => (reference (DMA)) applies to DMA_Cnx3;

@@ -119,7 +119,7 @@ public
     CPU : processor CPU.impl;
     Proc : process p.impl;
   properties
-    Actual_Processor_Binding => reference (CPU) applies to Proc;
+    Actual_Processor_Binding => (reference (CPU)) applies to Proc;
   end modevva.impl;
 
 end MoDeVVa;

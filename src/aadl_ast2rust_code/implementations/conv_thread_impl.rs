@@ -1465,11 +1465,18 @@ fn extract_event_port_urgency(impl_: &ComponentImplementation) -> Vec<(String, u
     for prop in properties {
         if let Property::BasicProperty(bp) = prop {
             if bp.identifier.name.to_lowercase() == "urgency" {
-                // Parse property value
-                if let PropertyValue::Single(PropertyExpression::Apply(apply_term)) = &bp.value {
-                    // Parse priority value
-                    if let Ok(priority) = apply_term.number.parse::<u32>() {
-                        port_priorities.push((apply_term.applies_to.clone(), priority));
+                if let PropertyValue::Single(PropertyExpression::Integer(
+                    SignedIntergerOrConstant::Real(integer),
+                )) = &bp.value
+                {
+                    if integer.sign != Some(Sign::Minus) {
+                        if let (Ok(priority), Some(targets)) =
+                            (u32::try_from(integer.value), bp.applies_to.as_ref())
+                        {
+                            for target in targets {
+                                port_priorities.push((target.clone(), priority));
+                            }
+                        }
                     }
                 }
             }

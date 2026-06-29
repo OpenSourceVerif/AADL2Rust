@@ -61,7 +61,7 @@ public
 			proc: processor proc.impl;
 			testevent: process top_process.impl;
 		properties
-			Actual_Processor_Binding => reference (proc) applies to testevent;
+			Actual_Processor_Binding => (reference (proc)) applies to testevent;
 		-- 	HAMR::Platform => (seL4_TB, seL4_Only);
 		-- annex resolute {**
 		-- 	check CASE_Tools

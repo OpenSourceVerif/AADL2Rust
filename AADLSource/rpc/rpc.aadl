@@ -192,7 +192,7 @@ public
     RPC : process RPC_Process.Impl;
     CPU : processor the_processor.i;
   properties
-    Actual_Processor_Binding => reference (CPU) applies to RPC;
+    Actual_Processor_Binding => (reference (CPU)) applies to RPC;
   end RPC.Impl;
 
 end RPC;

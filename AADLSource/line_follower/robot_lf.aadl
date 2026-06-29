@@ -75,7 +75,7 @@ public
 
   properties
     -- Actual_Processor_Binding => reference (ATMEGA328p) applies to Code;
-    Actual_Processor_Binding => reference (CPU) applies to Code;
+    Actual_Processor_Binding => (reference (CPU)) applies to Code;
 
   end Line_Follower_Robot.i;
 

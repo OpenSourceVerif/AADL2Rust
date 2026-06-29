@@ -111,7 +111,7 @@ public
 			proc: processor proc.impl;
 			testshare: process top_process.impl;
 		properties
-			Actual_Processor_Binding => reference (proc) applies to testshare;
+			Actual_Processor_Binding => (reference (proc)) applies to testshare;
 		-- 	HAMR::Platform => (seL4_TB);
 		-- annex resolute {**
 		-- 	check CASE_Tools

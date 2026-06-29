@@ -120,7 +120,7 @@ public
 			proc : processor proc.impl;
 			testsubprogram: process top_process.impl;
 		properties
-			Actual_Processor_Binding => reference (proc) applies to testsubprogram;
+			Actual_Processor_Binding => (reference (proc)) applies to testsubprogram;
 		-- 	HAMR::Platform => (seL4_TB);
 		-- annex resolute {**
 		-- 	check CASE_Tools

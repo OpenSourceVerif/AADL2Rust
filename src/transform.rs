@@ -658,6 +658,12 @@ impl AADLTransformer {
         }
         // Process property_value
         let value: PropertyValue = Self::transform_property_value(inner_iter.next().unwrap());
+        let applies_to = inner_iter.next().map(|clause| {
+            clause
+                .into_inner()
+                .map(extract_identifier)
+                .collect::<Vec<_>>()
+        });
 
         Property::BasicProperty(BasicPropertyAssociation {
             identifier: PropertyIdentifier {
@@ -667,6 +673,7 @@ impl AADLTransformer {
             operator,
             is_constant, // TODO: Handle constant
             value,
+            applies_to,
         })
     }
 
@@ -690,12 +697,6 @@ impl AADLTransformer {
 
         let inner = pair.into_inner().next().unwrap();
         match inner.as_rule() {
-            aadlight_parser::Rule::apply_value => {
-                let mut parts = inner.into_inner();
-                let number = parts.next().unwrap().as_str().trim().to_string();
-                let applies_to = parts.next().unwrap().as_str().trim().to_string();
-                PropertyValue::Single(PropertyExpression::Apply(ApplyTerm { number, applies_to }))
-            }
             aadlight_parser::Rule::range_value => {
                 // println!("=== Debug range_value ===");
                 // println!("inner = Rule::{:?}, text = {}", inner.as_rule(), inner.as_str());
@@ -858,19 +859,8 @@ impl AADLTransformer {
             aadlight_parser::Rule::reference_value => {
                 let mut ref_parts = inner.into_inner();
                 let referenced_id = extract_identifier(ref_parts.next().unwrap());
-
-                // Check whether there is an applies to clause
-                let mut applies_to = None;
-                for part in ref_parts {
-                    if part.as_rule() == aadlight_parser::Rule::qualified_identifier {
-                        applies_to = Some(extract_identifier(part));
-                        break;
-                    }
-                }
-
                 PropertyValue::Single(PropertyExpression::Reference(ReferenceTerm {
                     identifier: referenced_id,
-                    applies_to,
                 }))
             }
             aadlight_parser::Rule::component_classifier_value => {

@@ -100,8 +100,8 @@ connections
   cn0: port Node_A.Out_Port -> Node_B.In_Port;
     -- {Actual_Connection_Binding => (reference (the_bus));};
 properties
-  actual_processor_binding => reference (CPU_A) applies to Node_A;
-  actual_processor_binding => reference (CPU_B) applies to Node_B;
+  actual_processor_binding => (reference (CPU_A)) applies to Node_A;
+  actual_processor_binding => (reference (CPU_B)) applies to Node_B;
   -- actual_processor_binding => reference (CPU_A) applies to Device_A;
   -- actual_processor_binding => reference (CPU_B) applies to Device_B;
 end PING.Impl;

@@ -332,8 +332,8 @@ public
 
     -- Actual_Processor_Binding => (reference (cpu.part1)) applies to partition1_pr;
     -- Actual_Processor_Binding => (reference (cpu.part2)) applies to partition2_pr;
-    Actual_Processor_Binding => reference (cpu) applies to partition1_pr;
-    Actual_Processor_Binding => reference (cpu) applies to partition2_pr;
+    Actual_Processor_Binding => (reference (cpu)) applies to partition1_pr;
+    Actual_Processor_Binding => (reference (cpu)) applies to partition2_pr;
     -- bind partition process to their address spaces (memory
     -- components)
 

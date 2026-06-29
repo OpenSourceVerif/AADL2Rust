@@ -320,9 +320,9 @@ public
   -- properties
   --   Actual_Connection_Binding => reference (rtbus) applies to conn1;
   properties
-    Actual_Processor_Binding => reference (cpu) applies to m1_p1;
-    Actual_Processor_Binding => reference (cpu) applies to m1_p2;
-    Actual_Processor_Binding => reference (cpu) applies to m2_p1;
+    Actual_Processor_Binding => (reference (cpu)) applies to m1_p1;
+    Actual_Processor_Binding => (reference (cpu)) applies to m1_p2;
+    Actual_Processor_Binding => (reference (cpu)) applies to m2_p1;
   end arinc653system.impl;
 
 end arincexample2;
