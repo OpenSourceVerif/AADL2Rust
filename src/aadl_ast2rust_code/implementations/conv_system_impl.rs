@@ -103,6 +103,8 @@ fn create_system_impl_block(
         name: "new".to_string(),
         params: vec![],
         return_type: Type::Named("Self".to_string()),
+        // Generated system lifecycle methods are non-generic.
+        generics: Vec::new(),
         body: create_system_new_body(temp_converter, impl_),
         asyncness: false,
         vis: Visibility::None,
@@ -118,6 +120,8 @@ fn create_system_impl_block(
             ty: Type::Named("Self".to_string()),
         }],
         return_type: Type::Unit,
+        // Generated system lifecycle methods are non-generic.
+        generics: Vec::new(),
         body: create_system_run_body(impl_),
         asyncness: false,
         vis: Visibility::None,
@@ -176,13 +180,12 @@ fn extract_processor_bindings(impl_: &ComponentImplementation) -> Vec<(String, S
     bindings
 }
 // Create the new() method body for the system instance
-fn create_system_new_body(
+/// Collect the same CPU IDs before thread emission and during system creation.
+/// Reusing this pass keeps declaration order from hiding an actual deployment.
+pub(crate) fn collect_processor_binding_ids(
     temp_converter: &mut AadlConverter,
     impl_: &ComponentImplementation,
-) -> Block {
-    let mut stmts = Vec::new();
-
-    // 1. Extract processor binding information and create CPU mapping
+) -> Vec<(String, String)> {
     let processor_bindings = extract_processor_bindings(impl_);
 
     // Assign an ID to each unique CPU name (if not already assigned)
@@ -198,6 +201,17 @@ fn create_system_new_body(
                 .insert(cpu_name.clone(), next_id);
         }
     }
+    processor_bindings
+}
+
+fn create_system_new_body(
+    temp_converter: &mut AadlConverter,
+    impl_: &ComponentImplementation,
+) -> Block {
+    let mut stmts = Vec::new();
+
+    // 1. Extract processor binding information and create CPU mapping.
+    let processor_bindings = collect_processor_binding_ids(temp_converter, impl_);
 
     // If there is no processor binding, default to CPU 0
     // if temp_converter.cpu_name_to_id_mapping.is_empty() {
@@ -342,6 +356,8 @@ fn create_system_run_body(impl_: &ComponentImplementation) -> Block {
                             "run".to_string(),
                             Vec::new(),
                         )),
+                        // BuilderMethod::Spawn emits `move`; avoid printing `move move`.
+                        false,
                     );
 
                     // Build thread builder expression chain

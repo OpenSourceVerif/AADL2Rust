@@ -88,6 +88,8 @@ fn create_device_new_method(comp: &ComponentType, period_ms: u64) -> FunctionDef
         name: "new".to_string(),
         params: Vec::new(),
         return_type: Type::Named("Self".to_string()),
+        // Generated device lifecycle methods are non-generic.
+        generics: Vec::new(),
         body,
         asyncness: false,
         vis: Visibility::None,
@@ -412,6 +414,8 @@ fn create_device_run_method(temp_converter: &AadlConverter, comp: &ComponentType
             ty: Type::Named("Self".to_string()),
         }],
         return_type: Type::Unit,
+        // Generated device lifecycle methods are non-generic.
+        generics: Vec::new(),
         body: Block { stmts, expr: None },
         asyncness: false,
         vis: Visibility::None,

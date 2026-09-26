@@ -348,7 +348,13 @@ impl AnnexConverter {
             Vec::new(),
         );
         let ok_expr = Expr::MethodCall(Box::new(try_recv_expr), "ok".to_string(), Vec::new());
-        let closure_expr = Expr::Closure(vec!["rx".to_string()], Box::new(ok_expr));
+        let closure_expr = Expr::Closure(
+            // `and_then` supplies the receiver, so its concrete type can be inferred.
+            vec![ClosureParam::untyped("rx")],
+            Box::new(ok_expr),
+            // This short callback borrows its surroundings and does not need `move` capture.
+            false,
+        );
         let and_then_expr = Expr::MethodCall(
             Box::new(as_mut_expr),
             "and_then".to_string(),
@@ -359,8 +365,11 @@ impl AnnexConverter {
             Box::new(and_then_expr),
             "unwrap_or_else".to_string(),
             vec![Expr::Closure(
-                vec!["".to_string()],
+                // `unwrap_or_else` invokes a zero-argument fallback closure.
+                Vec::new(),
                 Box::new(Expr::Ident("Default::default()".to_string())),
+                // The fallback captures no values, so a `move` closure is unnecessary.
+                false,
             )],
         )
     }

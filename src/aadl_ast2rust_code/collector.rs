@@ -414,6 +414,8 @@ pub fn add_period_to_priority_function(
             ty: Type::Named("f64".to_string()),
         }],
         return_type: Type::Named("i32".to_string()),
+        // AADL scheduling helpers are concrete functions and do not introduce Rust generics.
+        generics: Vec::new(),
         body: Block {
             stmts: body_stmts,
             expr: None,

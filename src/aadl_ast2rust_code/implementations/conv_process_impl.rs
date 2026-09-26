@@ -322,6 +322,8 @@ fn create_process_impl_block(
             ty: Type::Named("isize".to_string()),
         }],
         return_type: Type::Named("Self".to_string()),
+        // Generated process lifecycle methods are non-generic.
+        generics: Vec::new(),
         body: create_process_new_body(temp_converter, impl_),
         asyncness: false,
         vis: Visibility::None,
@@ -337,6 +339,8 @@ fn create_process_impl_block(
             ty: Type::Named("Self".to_string()),
         }],
         return_type: Type::Unit,
+        // Generated process lifecycle methods are non-generic.
+        generics: Vec::new(),
         body: create_process_start_body(temp_converter, impl_),
         asyncness: false,
         vis: Visibility::None,
@@ -685,6 +689,8 @@ fn create_process_start_body(
                 "run".to_string(),
                 Vec::new(),
             )),
+            // BuilderMethod::Spawn emits `move`; keep the nested closure itself non-move.
+            false,
         );
 
         // Build thread builder expression chain
@@ -730,6 +736,8 @@ fn create_process_start_body(
                 stmts: forwarding_loop,
                 expr: None,
             })),
+            // BuilderMethod::Spawn emits `move`; keep the nested closure itself non-move.
+            false,
         );
 
         // Build thread builder expression chain

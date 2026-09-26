@@ -4,14 +4,24 @@ use aadl_intermediate::*;
 use crate::aadl_ast2rust_code::converter_annex::AnnexConverter;
 
 use crate::ast::aadl_ast_cj::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use crate::aadl_ast2rust_code::collector;
 use crate::aadl_ast2rust_code::types::*;
 use crate::aadl_ast2rust_code::implementations::*;
 
 // Converter from AADL to the Rust intermediate representation
 pub struct AadlConverter {
+    // A single explicitly selected implementation owns the external BA object.
+    // Keeping its package identity prevents another Worker.impl from being selected.
+    external_ba_target: Option<(String, String, String)>,
+    // Normalized only for the selected external host; native property lowering is unchanged.
+    external_ba_period_ns: Option<u64>,
+    current_package_name: String,
     pub type_mappings: HashMap<String, Type>, // initially built from the AADL library file Base_Types.aadl, mapping AADL Data component names to corresponding Rust types; later extended based on model files
+
+    // Modules generated for the current AADL case. `None` preserves the legacy
+    // behavior for callers that convert an isolated package without case context.
+    available_package_modules: Option<HashSet<String>>,
 
     pub component_types: HashMap<String, ComponentType>, // stores component type information (used in some cases to obtain port information from a component implementation based on its type)
     pub annex_converter: AnnexConverter, // Behavior Annex converter
@@ -62,10 +72,23 @@ impl Default for AadlConverter {
 
         type_mappings.insert("character".to_string(), Type::Named("char".to_string()));
 
-        type_mappings.insert("string".to_string(), Type::Named("String".to_string()));
+        // Use an absolute path so an AADL data type named `String` does not shadow
+        // Rust's owned string type and produce `type String = String`.
+        type_mappings.insert(
+            "string".to_string(),
+            Type::Path(vec![
+                "std".to_string(),
+                "string".to_string(),
+                "String".to_string(),
+            ]),
+        );
 
         Self {
+            external_ba_target: None,
+            external_ba_period_ns: None,
+            current_package_name: String::new(),
             type_mappings,
+            available_package_modules: None,
             component_types: HashMap::new(),
             annex_converter: AnnexConverter::default(),
             cpu_scheduling_protocols: HashMap::new(),
@@ -83,13 +106,189 @@ impl Default for AadlConverter {
 }
 
 impl AadlConverter {
+    /// Select an existing thread implementation without changing its AADL protocol.
+    /// This validates the integration boundary before any Rust module is emitted.
+    pub fn set_external_ba_target(&mut self, target: &str, packages: &[Package]) -> Result<(), String> {
+        let requested = target.to_lowercase();
+        let mut matches = Vec::new();
+        for package in packages {
+            let package_name = package.name.to_string().to_lowercase();
+            for section in [&package.public_section, &package.private_section].into_iter().flatten() {
+                for declaration in &section.declarations {
+                    if let AadlDeclaration::ComponentImplementation(implementation) = declaration {
+                        if implementation.category != ComponentCategory::Thread { continue; }
+                        let implementation_name = implementation.name.to_string().to_lowercase();
+                        if requested == implementation_name || requested == format!("{package_name}::{implementation_name}") {
+                            matches.push((package, implementation, package_name.clone(), implementation_name));
+                        }
+                    }
+                }
+            }
+        }
+        if matches.len() != 1 {
+            return Err(format!("external BA target '{target}' must identify exactly one thread implementation (matched {})", matches.len()));
+        }
+        let (package, implementation, package_name, implementation_name) = matches.remove(0);
+        let component = [&package.public_section, &package.private_section].into_iter().flatten()
+            .flat_map(|section| &section.declarations)
+            .find_map(|declaration| match declaration {
+                AadlDeclaration::ComponentType(component)
+                    if component.category == ComponentCategory::Thread
+                    && component.identifier.eq_ignore_ascii_case(&implementation.name.type_identifier) => Some(component),
+                _ => None,
+            }).ok_or_else(|| format!("external BA thread type '{}' is unavailable in its package", implementation.name.type_identifier))?;
+        let protocol = [&implementation.properties, &component.properties].into_iter().find_map(|clause| {
+            if let PropertyClause::Properties(properties) = clause {
+                properties.iter().find_map(|property| match property {
+                    Property::BasicProperty(property) if property.identifier.name.eq_ignore_ascii_case("dispatch_protocol") => {
+                        match self.parse_property_value(&property.value) {
+                            Some(StruPropertyValue::String(value)) => Some(value),
+                            _ => None,
+                        }
+                    }
+                    _ => None,
+                })
+            } else { None }
+        });
+        let protocol = match protocol.as_deref().map(str::to_ascii_lowercase).as_deref() {
+            Some("periodic") => "Periodic",
+            Some("sporadic") => "Sporadic",
+            Some("aperiodic") => "Aperiodic",
+            Some("timed") => "Timed",
+            Some("hybrid") => "Hybrid",
+            Some("background") => "Background",
+            _ => return Err(format!("unsupported external BA dispatch protocol: {}", protocol.as_deref().unwrap_or("<missing>"))),
+        };
+        let period_ns = if matches!(protocol, "Periodic" | "Sporadic" | "Timed" | "Hybrid") {
+            let period = [&implementation.properties, &component.properties].into_iter().find_map(|clause| {
+                if let PropertyClause::Properties(properties) = clause {
+                    properties.iter().find_map(|property| match property {
+                        Property::BasicProperty(property) if property.identifier.name.eq_ignore_ascii_case("period") => Some(&property.value),
+                        _ => None,
+                    })
+                } else { None }
+            }).ok_or_else(|| format!("unsupported external BA {protocol} host without an explicit Period; no synthetic timing default is used"))?;
+            Some(Self::external_period_nanoseconds(period)?)
+        } else {
+            // Aperiodic and Background have no period-based activation condition.
+            None
+        };
+        let mut event_input_count = 0;
+        if let FeatureClause::Items(features) = &component.features {
+            for feature in features {
+                if let Feature::Port(port) = feature {
+                    if port.direction == PortDirection::In && matches!(port.port_type, PortType::Event | PortType::EventData { .. }) {
+                        event_input_count += 1;
+                    }
+                    if port.direction == PortDirection::InOut {
+                        return Err(format!("unsupported external BA in-out port '{}'", port.identifier));
+                    }
+                    if matches!(port.identifier.to_lowercase().as_str(), "ba_context" | "ba_initialized" | "ba_pending_events"
+                        | "ba_last_poll" | "ba_last_dispatch" | "ba_next_release" | "ba_background_dispatched") {
+                        return Err(format!("external BA generated field conflicts with port '{}'", port.identifier));
+                    }
+                }
+            }
+        }
+        if matches!(protocol, "Aperiodic" | "Sporadic") && event_input_count == 0 {
+            return Err("unsupported external BA event-driven thread without an input event port".to_string());
+        }
+        if matches!(&implementation.calls, CallSequenceClause::Items(sequences) if !sequences.is_empty()) {
+            return Err("unsupported external BA thread with a separate thread-level calls sequence".to_string());
+        }
+        self.external_ba_target = Some((package_name, implementation_name, protocol.to_string()));
+        self.external_ba_period_ns = period_ns;
+        Ok(())
+    }
+
+    /// Read the original property AST so ns/us/ms/sec are never mistaken for ms.
+    /// Unresolved constants and real-valued AST nodes fail explicitly: their
+    /// f64 representation cannot establish an exact integer nanosecond value.
+    fn external_period_nanoseconds(value: &PropertyValue) -> Result<u64, String> {
+        let failure = || "unsupported external BA Period: expected a positive integer literal in ns/us/ms/sec/min/hr fitting u64 nanoseconds".to_string();
+        let scale_for = |unit: &Option<String>| -> Result<u64, String> {
+            match unit.as_deref().map(str::to_ascii_lowercase).as_deref() {
+                Some("ns") => Ok(1),
+                Some("us") => Ok(1_000),
+                Some("ms") => Ok(1_000_000),
+                Some("sec") => Ok(1_000_000_000),
+                Some("min") => Ok(60_000_000_000),
+                Some("hr") => Ok(3_600_000_000_000),
+                _ => Err(failure()),
+            }
+        };
+        let nanoseconds = match value {
+            PropertyValue::Single(PropertyExpression::Integer(SignedIntergerOrConstant::Real(number)))
+                if number.sign != Some(Sign::Minus) && number.value > 0 => {
+                (number.value as u64).checked_mul(scale_for(&number.unit)?).ok_or_else(failure)?
+            }
+            _ => return Err(failure()),
+        };
+        Ok(nanoseconds)
+    }
+
+    pub fn external_ba_period_nanoseconds(&self, implementation: &ComponentImplementation) -> Option<u64> {
+        if self.uses_external_ba(implementation) { self.external_ba_period_ns } else { None }
+    }
+
+    /// True only while converting the selected implementation's own package.
+    pub fn uses_external_ba(&self, implementation: &ComponentImplementation) -> bool {
+        self.external_ba_target.as_ref().is_some_and(|(package, target, _)| {
+            *package == self.current_package_name && target.eq_ignore_ascii_case(&implementation.name.to_string())
+        })
+    }
+
+    /// Return the validated, case-normalized protocol for the selected thread.
+    pub fn external_ba_protocol(&self, implementation: &ComponentImplementation) -> Option<String> {
+        if self.uses_external_ba(implementation) {
+            self.external_ba_target.as_ref().map(|(_, _, protocol)| protocol.clone())
+        } else { None }
+    }
+
+    /// The CPU-policy collector emits no map when no deployment was collected.
+    /// Neither native nor external hosts may reference that absent definition.
+    pub fn has_cpu_schedule_mapping(&self) -> bool {
+        !self.cpu_name_to_id_mapping.is_empty()
+    }
+
+    /// Match the existing collector's condition for emitting period_to_priority.
+    /// A period alone does not imply an RMS/DMS processor deployment.
+    pub fn has_period_priority_helper(&self) -> bool {
+        self.cpu_scheduling_protocols.values().any(|protocol| {
+            let upper = protocol.to_uppercase();
+            upper.contains("RATE_MONOTONIC") || upper.contains("RMS") || upper.contains("RM")
+                || upper.contains("DEADLINE_MONOTONIC") || upper.contains("DMS") || upper.contains("DM")
+        })
+    }
+    /// Registers every AADL package that will become a Rust module in this case.
+    /// Imports of external metadata packages are omitted unless their module is generated.
+    pub fn set_available_packages(&mut self, packages: &[Package]) {
+        self.available_package_modules = Some(
+            packages
+                .iter()
+                .map(|package| Self::package_module_name(&package.name))
+                .collect(),
+        );
+    }
+
+    fn package_module_name(package_name: &PackageName) -> String {
+        package_name
+            .0
+            .iter()
+            .map(|segment| segment.to_ascii_lowercase())
+            .collect::<Vec<_>>()
+            .join("_")
+    }
+
     // Infer the Rust type from a property value (used when inferring types for thread property values)
     pub fn type_for_property(&self, value: &StruPropertyValue) -> String {
         match value {
             StruPropertyValue::Boolean(_) => "bool".to_string(),
             StruPropertyValue::Integer(_) => "u64".to_string(),
             StruPropertyValue::Float(_) => "f64".to_string(),
-            StruPropertyValue::String(_) => "String".to_string(),
+            // Keep generated property fields valid even inside a module that
+            // declares its own AADL `String` alias.
+            StruPropertyValue::String(_) => "std::string::String".to_string(),
             StruPropertyValue::Duration(_, _) => "u64".to_string(),
             StruPropertyValue::Range(_, _, _) => "(u64, u64)".to_string(),
             StruPropertyValue::None => "None".to_string(),
@@ -98,6 +297,7 @@ impl AadlConverter {
     }
     // Main conversion entry
     pub fn convert_package(&mut self, pkg: &Package) -> RustModule {
+        self.current_package_name = pkg.name.to_string().to_lowercase();
         // First collect all component type information
         collector::collect_component_types(&mut self.component_types, pkg);
 
@@ -105,6 +305,24 @@ impl AadlConverter {
         collector::collect_process_connections(&mut self.process_broadcast_send,&mut self.process_broadcast_receive,&mut self.system_subcomponent_identify_to_type,pkg);
         // Collect multi-connection relationships between a process and its threads
         collector::collect_thread_connections(&mut self.thread_broadcast_receive,&mut self.process_subcomponent_identify_to_type,pkg);
+        // Processor declarations and bindings may follow their thread. Collect
+        // existing metadata first so emission guards do not depend on source order.
+        // These same idempotent helpers are reused by ordinary conversion below.
+        for section in pkg.public_section.iter().chain(pkg.private_section.iter()) {
+            for declaration in &section.declarations {
+                if let AadlDeclaration::ComponentImplementation(implementation) = declaration {
+                    match implementation.category {
+                        ComponentCategory::Processor => {
+                            conv_processor_impl::convert_processor_implementation(&mut self.cpu_scheduling_protocols, implementation);
+                        }
+                        ComponentCategory::System => {
+                            conv_system_impl::collect_processor_binding_ids(self, implementation);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
         // println!("thread_broadcast_receive: {:?}", self.thread_broadcast_receive);
         // println!("process_subcomponent_identify_to_type: {:?}", self.process_subcomponent_identify_to_type);
 
@@ -223,12 +441,17 @@ impl AadlConverter {
                         for pkg_name in packages.iter() {
                             // Key point: do not use to_string()
                             // print!("pkg0:{:?}",pkg_name.0.clone());
-                            let module_name = pkg_name
-                                .0
-                                .iter()
-                                .map(|s| s.to_ascii_lowercase())
-                                .collect::<Vec<_>>()
-                                .join("_");
+                            let module_name = Self::package_module_name(pkg_name);
+
+                            // An AADL `with` can name an external library or metadata package.
+                            // Emit a Rust import only when this case actually generates the module.
+                            if self
+                                .available_package_modules
+                                .as_ref()
+                                .is_some_and(|modules| !modules.contains(&module_name))
+                            {
+                                continue;
+                            }
 
                             items.push(Item::Use(UseStatement {
                                 path: vec!["crate".to_string(), module_name],
@@ -313,7 +536,17 @@ impl AadlConverter {
         match comp.category {
             ComponentCategory::Data => conv_data_type::convert_data_component(&mut self.type_mappings, comp,&mut self.data_comp_type),
             ComponentCategory::Thread => conv_thread_type::convert_thread_component(self, comp),
-            ComponentCategory::Subprogram => conv_subprogram_type::convert_subprogram_component(self,comp, package),
+            ComponentCategory::Subprogram => {
+                if self.external_ba_target.as_ref().is_some_and(|(target_package, _, _)| {
+                    target_package.eq_ignore_ascii_case(&package.name.to_string())
+                }) {
+                    // The compiled BA calls one complete runtime ABI, including aliasing
+                    // and in-out parameters. Legacy per-port wrappers would split that ABI.
+                    vec![Item::Raw(format!("// Subprogram {} is called by the compiled BA through its complete runtime ABI, implemented by Rust Glue.", comp.identifier))]
+                } else {
+                    conv_subprogram_type::convert_subprogram_component(self, comp, package)
+                }
+            }
             ComponentCategory::System => conv_system_type::convert_system_component(self, comp),
             ComponentCategory::Process => conv_process_type::convert_process_component(self, comp),
             ComponentCategory::Device => conv_device_type::convert_device_component(self,comp),
@@ -885,4 +1118,182 @@ impl AadlConverter {
 
     
 
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::aadl_ast2rust_code::merge_utils::merge_item_defs;
+
+    fn native_scheduling_source(deployment: Option<&str>, explicit_priority: bool) -> (String, String) {
+        use crate::aadlight_parser::{AADLParser, Rule};
+        use crate::transform::AADLTransformer;
+        use pest::Parser;
+        // The deployment deliberately follows the thread: guards must use the
+        // collected model, not the position at which the thread was declared.
+        let processor = deployment.map(|protocol| format!(r#"
+  processor Cpu end Cpu;
+  processor implementation Cpu.impl
+    properties Scheduling_Protocol => "{protocol}";
+  end Cpu.impl;
+"#)).unwrap_or_default();
+        let subcomponent = if deployment.is_some() { "cpu: processor Cpu.impl;" } else { "" };
+        let binding = if deployment.is_some() {
+            "properties Actual_Processor_Binding => (reference (cpu)) applies to app;"
+        } else { "" };
+        let priority = if explicit_priority { "Priority => 7;" } else { "" };
+        let source = format!(r#"package Native_Metadata
+public
+  thread Worker end Worker;
+  thread implementation Worker.impl
+    properties Dispatch_Protocol => Periodic; Period => 10 ms; {priority}
+  end Worker.impl;
+  {processor}
+  process Container end Container;
+  process implementation Container.impl
+    subcomponents worker: thread Worker.impl;
+  end Container.impl;
+  system Root end Root;
+  system implementation Root.impl
+    subcomponents app: process Container.impl; {subcomponent}
+    {binding}
+  end Root.impl;
+end Native_Metadata;"#);
+        let packages = AADLTransformer::transform_file(AADLParser::parse(Rule::file, &source).unwrap().collect());
+        let mut converter = AadlConverter::default();
+        let module = merge_item_defs(converter.convert_package(&packages[0]));
+        let generated = RustCodeGenerator::new().generate_module_code(&module);
+        syn::parse_file(&generated).expect("native metadata fixture emits Rust syntax");
+        let mut thread_module = module.clone();
+        thread_module.items.retain(|item| matches!(item,
+            Item::Impl(definition) if matches!(&definition.target, Type::Named(name) if name == "WorkerThread")));
+        (generated, RustCodeGenerator::new().generate_module_code(&thread_module))
+    }
+
+    #[test]
+    fn native_thread_without_deployment_omits_absent_os_metadata() {
+        for explicit_priority in [false, true] {
+            let (generated, thread_source) = native_scheduling_source(None, explicit_priority);
+            assert!(!generated.contains("CPU_ID_TO_SCHED_POLICY"));
+            assert!(!generated.contains("period_to_priority("));
+            assert!(!thread_source.contains("set_thread_affinity(self.cpu_id)"));
+            assert!(!thread_source.contains("pthread_setschedparam("));
+            assert!(thread_source.contains("retain the native dispatch loop"));
+            assert!(thread_source.contains("loop {"));
+            assert!(!thread_source.contains("ba_glue"));
+        }
+    }
+
+    #[test]
+    fn native_thread_preserves_real_processor_metadata_after_its_declaration() {
+        for protocol in ["RMS", "FIFO"] {
+            for explicit_priority in [false, true] {
+                let (generated, thread_source) = native_scheduling_source(Some(protocol), explicit_priority);
+                assert!(generated.contains("CPU_ID_TO_SCHED_POLICY"));
+                assert!(thread_source.contains("set_thread_affinity(self.cpu_id)"));
+                assert_eq!(generated.contains("fn period_to_priority("), protocol == "RMS");
+                assert_eq!(thread_source.contains("period_to_priority(self.period as f64)"), protocol == "RMS" && !explicit_priority);
+                assert_eq!(thread_source.contains("pthread_setschedparam("), protocol == "RMS" || explicit_priority);
+                assert!(!thread_source.contains("No collected processor deployment"));
+            }
+        }
+    }
+
+    #[test]
+    fn external_ba_subprograms_use_complete_glue_abi_only_in_selected_package() {
+        use crate::aadlight_parser::{AADLParser, Rule};
+        use crate::transform::AADLTransformer;
+        use pest::Parser;
+        let source = r#"package Foreign_Host
+public
+  with Base_Types;
+  subprogram Change
+    features
+      increment : in parameter Base_Types::Integer_32;
+      first_result : in out parameter Base_Types::Integer_32;
+      second_result : out parameter Base_Types::Integer_32;
+    properties Source_Name => "external_change";
+  end Change;
+  thread Worker end Worker;
+  thread implementation Worker.impl
+    properties Dispatch_Protocol => Periodic; Period => 10 ms;
+  end Worker.impl;
+end Foreign_Host;"#;
+        let packages = AADLTransformer::transform_file(AADLParser::parse(Rule::file, source).unwrap().collect());
+        let package = &packages[0];
+        let subprogram = package.public_section.as_ref().unwrap().declarations.iter().find_map(|declaration| {
+            if let AadlDeclaration::ComponentType(component) = declaration {
+                if component.category == ComponentCategory::Subprogram { return Some(component); }
+            }
+            None
+        }).unwrap();
+        let mut native = AadlConverter::default();
+        let original = native.convert_component(subprogram, package);
+        assert!(original.iter().any(|item| matches!(item, Item::Mod(_))), "native per-port wrapper stays unchanged");
+
+        let mut external = AadlConverter::default();
+        external.set_external_ba_target("Worker.impl", &packages).unwrap();
+        let delegated = external.convert_component(subprogram, package);
+        assert_eq!(delegated.len(), 1);
+        assert!(matches!(&delegated[0], Item::Raw(comment) if comment.contains("complete runtime ABI, implemented by Rust Glue")));
+        let mut other_package = package.clone();
+        other_package.name = PackageName(vec!["Other_Package".to_string()]);
+        let other = external.convert_component(subprogram, &other_package);
+        assert!(other.iter().any(|item| matches!(item, Item::Mod(_))), "unselected packages retain their wrappers");
+    }
+
+    #[test]
+    fn string_types_use_the_absolute_standard_library_path() {
+        let converter = AadlConverter::default();
+
+        // An absolute path prevents an AADL alias named `String` from referring to itself.
+        let Some(Type::Path(path)) = converter.type_mappings.get("string") else {
+            panic!("the AADL string type must map to a structured Rust path");
+        };
+        assert_eq!(path, &["std", "string", "String"]);
+
+        let property_type =
+            converter.type_for_property(&StruPropertyValue::String("value".to_string()));
+        assert_eq!(property_type, "std::string::String");
+    }
+
+    #[test]
+    fn package_imports_only_reference_modules_generated_for_the_case() {
+        let imported_package = Package {
+            name: PackageName(vec!["Shared_Types".to_string()]),
+            visibility_decls: Vec::new(),
+            public_section: None,
+            private_section: None,
+            properties: PropertyClause::ExplicitNone,
+        };
+        let importing_package = Package {
+            name: PackageName(vec!["Application".to_string()]),
+            visibility_decls: vec![VisibilityDeclaration::Import {
+                packages: vec![
+                    PackageName(vec!["Shared_Types".to_string()]),
+                    PackageName(vec!["Processors".to_string()]),
+                ],
+                property_sets: Vec::new(),
+            }],
+            public_section: None,
+            private_section: None,
+            properties: PropertyClause::ExplicitNone,
+        };
+
+        let mut converter = AadlConverter::default();
+        converter.set_available_packages(&[imported_package, importing_package.clone()]);
+        let imports = converter.convert_withs(&importing_package);
+        let imported_paths: Vec<Vec<String>> = imports
+            .iter()
+            .filter_map(|item| match item {
+                Item::Use(use_statement) => Some(use_statement.path.clone()),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(
+            imported_paths,
+            vec![vec!["crate".to_string(), "shared_types".to_string()]]
+        );
+    }
 }

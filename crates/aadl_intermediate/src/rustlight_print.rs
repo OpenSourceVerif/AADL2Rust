@@ -1,5 +1,7 @@
 #![allow(clippy::only_used_in_recursion)]
-use crate::intermediate_ast::*;
+use crate::rustlight_ast::*;
+
+const MAX_FUNCTION_SIGNATURE_WIDTH: usize = 80;
 
 // Rust code generator
 pub struct RustCodeGenerator {
@@ -43,8 +45,11 @@ impl RustCodeGenerator {
 
     // Generate multiple items
     fn generate_items(&mut self, items: &[Item]) {
-        for item in items {
+        for (idx, item) in items.iter().enumerate() {
             self.generate_item(item);
+            if should_separate_after_use(item, items.get(idx + 1)) {
+                self.writeln("");
+            }
         }
     }
 
@@ -117,30 +122,37 @@ impl RustCodeGenerator {
             self.writeln(")]");
         }
 
+        let tuple_struct =
+            !s.fields.is_empty() && s.fields.iter().all(|field| field.name.is_empty());
+
         // Struct definition
         self.write(&format!("{}struct {} ", self.visibility(&s.vis), s.name));
 
-        if s.generics.is_empty() {
-            self.writeln("{");
-        } else {
+        if !s.generics.is_empty() {
             self.write("<");
             for (i, generic) in s.generics.iter().enumerate() {
                 if i > 0 {
                     self.write(", ");
                 }
-                self.write(&generic.name);
-                if !generic.bounds.is_empty() {
-                    self.write(": ");
-                    for (j, bound) in generic.bounds.iter().enumerate() {
-                        if j > 0 {
-                            self.write(" + ");
-                        }
-                        self.write(bound);
-                    }
-                }
+                self.write(&self.generic_param_to_string(generic));
             }
-            self.writeln("> {");
+            self.write(">");
         }
+
+        if tuple_struct {
+            self.write("(");
+            for (i, field) in s.fields.iter().enumerate() {
+                if i > 0 {
+                    self.write(", ");
+                }
+                self.write(&self.type_to_string(&field.ty));
+            }
+            self.writeln(");");
+            self.writeln("");
+            return;
+        }
+
+        self.writeln(" {");
 
         self.indent();
 
@@ -177,16 +189,7 @@ impl RustCodeGenerator {
                 if idx > 0 {
                     self.write(", ");
                 }
-                self.write(&generic.name);
-                if !generic.bounds.is_empty() {
-                    self.write(": ");
-                    for (j, bound) in generic.bounds.iter().enumerate() {
-                        if j > 0 {
-                            self.write(" + ");
-                        }
-                        self.write(bound);
-                    }
-                }
+                self.write(&self.generic_param_to_string(generic));
             }
             self.write(">");
         }
@@ -231,42 +234,117 @@ impl RustCodeGenerator {
             self.generate_attribute(attr);
         }
 
-        // Function signature
-        self.write(&format!(
-            "{}{}fn {}",
+        let head = format!(
+            "{}{}fn {}{}",
             self.visibility(&f.vis),
             if f.asyncness { "async " } else { "" },
-            f.name
-        ));
+            f.name,
+            self.generic_names_to_string(&f.generics)
+        );
+        let params_and_return = format!(
+            "({}) -> {}",
+            self.params_to_string(&f.params),
+            self.type_to_string(&f.return_type)
+        );
+        let signature = format!("{}{}", head, params_and_return);
+        let has_where_clause = f.generics.iter().any(|generic| !generic.bounds.is_empty());
 
-        // Parameters
-        self.write("(");
-        for (i, param) in f.params.iter().enumerate() {
-            if i > 0 {
-                self.write(", ");
-            }
-            if param.name.is_empty() {
-                self.write(&self.type_to_string(&param.ty));
+        if has_where_clause {
+            if signature.len() <= MAX_FUNCTION_SIGNATURE_WIDTH {
+                self.writeln(&signature);
             } else {
-                self.write(&format!(
-                    "{}: {}",
-                    param.name,
-                    self.type_to_string(&param.ty)
-                ));
+                self.writeln(&head);
+                self.indent();
+                self.writeln(&params_and_return);
+                self.dedent();
             }
+            self.generate_where_clause(&f.generics);
+            self.writeln("{");
+        } else if signature.len() <= MAX_FUNCTION_SIGNATURE_WIDTH {
+            self.writeln(&format!("{signature} {{"));
+        } else {
+            self.writeln(&head);
+            self.indent();
+            self.writeln(&format!("{params_and_return} {{"));
+            self.dedent();
         }
-        self.write(")");
 
-        // Return type
-        self.write(&format!(" -> {}", self.type_to_string(&f.return_type)));
-
-        // Function body
-        self.writeln(" {");
         self.indent();
         self.generate_block(&f.body);
         self.dedent();
         self.writeln("}");
         self.writeln("");
+    }
+
+    fn generic_names_to_string(&self, generics: &[GenericParam]) -> String {
+        if generics.is_empty() {
+            return String::new();
+        }
+
+        let mut out = String::from("<");
+        for (i, generic) in generics.iter().enumerate() {
+            if i > 0 {
+                out.push_str(", ");
+            }
+            out.push_str(&generic.name);
+        }
+        out.push('>');
+        out
+    }
+
+    fn generic_param_to_string(&self, generic: &GenericParam) -> String {
+        if generic.bounds.is_empty() {
+            generic.name.clone()
+        } else {
+            format!(
+                "{}: {}",
+                generic.name,
+                ordered_bounds_to_string(&generic.bounds)
+            )
+        }
+    }
+
+    fn params_to_string(&self, params: &[Param]) -> String {
+        params
+            .iter()
+            .map(|param| self.param_to_string(param))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    fn param_to_string(&self, param: &Param) -> String {
+        if param.name.is_empty() {
+            self.type_to_string(&param.ty)
+        } else {
+            format!("{}: {}", param.name, self.type_to_string(&param.ty))
+        }
+    }
+
+    fn generate_where_clause(&mut self, generics: &[GenericParam]) {
+        let mut bounded_generics = generics
+            .iter()
+            .filter(|generic| !generic.bounds.is_empty())
+            .collect::<Vec<_>>();
+        bounded_generics.sort_by(|left, right| left.name.cmp(&right.name));
+
+        if bounded_generics.is_empty() {
+            return;
+        }
+
+        self.writeln("where");
+        self.indent();
+        for (i, generic) in bounded_generics.iter().enumerate() {
+            let mut line = format!(
+                "{}: {}",
+                generic.name,
+                ordered_bounds_to_string(&generic.bounds)
+            );
+            if i + 1 < bounded_generics.len() {
+                line.push(',');
+            }
+            self.writeln(&line);
+        }
+        self.dedent();
     }
 
     fn generate_block(&mut self, block: &Block) {
@@ -276,7 +354,7 @@ impl RustCodeGenerator {
 
         if let Some(expr) = &block.expr {
             self.generate_expr(expr);
-            self.writeln(";");
+            self.writeln("");
         }
     }
 
@@ -288,6 +366,7 @@ impl RustCodeGenerator {
 
         if let Some(expr) = &block.expr {
             self.generate_expr(expr);
+            self.writeln("");
             // The last expression in a match arm should never end with a semicolon, since it is the return value
         }
     }
@@ -314,6 +393,14 @@ impl RustCodeGenerator {
                 self.writeln(";");
             }
             Statement::Item(item) => self.generate_item(item),
+            Statement::Return(value) => {
+                self.write("return");
+                if let Some(expr) = value {
+                    self.write(" ");
+                    self.generate_expr(expr);
+                }
+                self.writeln(";");
+            }
             Statement::Continue => {
                 self.writeln("continue;");
             }
@@ -329,6 +416,7 @@ impl RustCodeGenerator {
     fn generate_expr(&mut self, expr: &Expr) {
         match expr {
             Expr::Ident(id) => self.write(id),
+            Expr::Macro(source) => self.write(source),
             Expr::Path(path, path_type) => {
                 let separator = match path_type {
                     PathType::Namespace => "::",
@@ -343,6 +431,29 @@ impl RustCodeGenerator {
                 }
             }
             Expr::Literal(lit) => self.generate_literal(lit),
+            Expr::Array(items) => {
+                self.write("[");
+                for (i, item) in items.iter().enumerate() {
+                    if i > 0 {
+                        self.write(", ");
+                    }
+                    self.generate_expr(item);
+                }
+                self.write("]");
+            }
+            Expr::Tuple(items) => {
+                self.write("(");
+                for (i, item) in items.iter().enumerate() {
+                    if i > 0 {
+                        self.write(", ");
+                    }
+                    self.generate_expr(item);
+                }
+                if items.len() == 1 {
+                    self.write(",");
+                }
+                self.write(")");
+            }
             Expr::Call(callee, args) => {
                 self.generate_expr(callee);
                 self.write("(");
@@ -350,7 +461,7 @@ impl RustCodeGenerator {
                     if i > 0 {
                         self.write(", ");
                     }
-                    self.generate_expr(arg);
+                    self.generate_call_argument(arg);
                 }
                 self.write(")");
             }
@@ -364,7 +475,7 @@ impl RustCodeGenerator {
                     if i > 0 {
                         self.write(", ");
                     }
-                    self.generate_expr(arg);
+                    self.generate_call_argument(arg);
                 }
                 self.write(")");
             }
@@ -379,6 +490,26 @@ impl RustCodeGenerator {
                 self.writeln("loop {");
                 self.indent();
                 self.generate_block(block);
+                self.dedent();
+                self.write("}");
+            }
+            Expr::While {condition, body} => {
+                self.write("while ");
+                self.generate_expr(condition);
+                self.writeln(" {");
+                self.indent();
+                self.generate_block(body);
+                self.dedent();
+                self.write("}");
+            }
+            Expr::For {pattern, iter, body} => {
+                self.write("for ");
+                self.write(pattern);
+                self.write(" in ");
+                self.generate_expr(iter);
+                self.writeln(" {");
+                self.indent();
+                self.generate_block(body);
                 self.dedent();
                 self.write("}");
             }
@@ -410,15 +541,41 @@ impl RustCodeGenerator {
                     }
                 }
             }
-            Expr::Closure(params, body) => {
+            Expr::Closure(params, body, is_move) => {
+                if *is_move {
+                    self.write("move ");
+                }
                 self.write("|");
                 for (i, param) in params.iter().enumerate() {
                     if i > 0 {
                         self.write(", ");
                     }
-                    self.write(param);
+                    self.generate_closure_param(param);
                 }
                 self.write("| ");
+                match body.as_ref() {
+                    Expr::Block(_) => self.generate_expr(body),
+                    _ => {
+                        self.write("{ ");
+                        self.generate_expr(body);
+                        self.write(" }");
+                    }
+                }
+            }
+            Expr::TypedClosure(params, return_type, body, is_move) => {
+                if *is_move {
+                    self.write("move ");
+                }
+                self.write("|");
+                for (i, param) in params.iter().enumerate() {
+                    if i > 0 {
+                        self.write(", ");
+                    }
+                    self.generate_closure_param(param);
+                }
+                self.write("| -> ");
+                self.write(&self.type_to_string(return_type));
+                self.write(" ");
                 match body.as_ref() {
                     Expr::Block(_) => self.generate_expr(body),
                     _ => {
@@ -489,12 +646,24 @@ impl RustCodeGenerator {
                 self.write("}");
 
                 if let Some(else_branch) = else_branch {
-                    self.write(" else ");
-                    self.writeln("{");
-                    self.indent();
-                    self.generate_block(else_branch);
-                    self.dedent();
-                    self.write("}");
+                    if else_branch.stmts.is_empty()
+                        && matches!(else_branch.expr.as_deref(), Some(Expr::If { .. }))
+                    {
+                        self.write(" else ");
+                        self.generate_expr(
+                            else_branch
+                                .expr
+                                .as_deref()
+                                .expect("checked nested if expression"),
+                        );
+                    } else {
+                        self.write(" else ");
+                        self.writeln("{");
+                        self.indent();
+                        self.generate_block(else_branch);
+                        self.dedent();
+                        self.write("}");
+                    }
                 }
             }
             Expr::IfLet {
@@ -528,7 +697,16 @@ impl RustCodeGenerator {
                 if *mutable {
                     self.write("mut ");
                 }
-                self.generate_expr(inner_expr);
+                if matches!(
+                    inner_expr.as_ref(),
+                    Expr::BinaryOp(_, _, _) | Expr::Assign(_, _) | Expr::Cast(_, _)
+                ) {
+                    self.write("(");
+                    self.generate_expr(inner_expr);
+                    self.write(")");
+                } else {
+                    self.generate_expr(inner_expr);
+                }
             }
             Expr::BinaryOp(left, op, right) => {
                 self.generate_expr(left);
@@ -553,15 +731,56 @@ impl RustCodeGenerator {
                 self.write("]");
             }
             Expr::Parenthesized(expr) => {
-                self.write("(");
-                self.generate_expr(expr);
-                self.write(")");
+                if matches!(expr.as_ref(), Expr::Cast(_, _)) {
+                    self.generate_expr(expr);
+                } else {
+                    self.write("(");
+                    self.generate_expr(expr);
+                    self.write(")");
+                }
             }
+            Expr::Cast(expr, ty) => {
+                self.generate_cast_expr(expr, ty, true);
+            }
+        }
+    }
+
+    fn generate_call_argument(&mut self, expr: &Expr) {
+        // The call delimiters already delimit a complete argument expression,
+        // so an explicit outer `Parenthesized` wrapper is redundant here.
+        // Keep parentheses owned by the expression itself (for example, a
+        // tuple still prints as `(a, b)`) while avoiding shapes such as
+        // `f(({ ... }))` and `f((-x))`.
+        let expr = Self::strip_parenthesized(expr);
+        if let Expr::Cast(cast_expr, ty) = expr {
+            self.generate_cast_expr(cast_expr, ty, false);
+        } else {
+            self.generate_expr(expr);
+        }
+    }
+
+    fn strip_parenthesized(expr: &Expr) -> &Expr {
+        match expr {
+            Expr::Parenthesized(inner) => Self::strip_parenthesized(inner),
+            _ => expr,
+        }
+    }
+
+    fn generate_cast_expr(&mut self, expr: &Expr, ty: &Type, parenthesized: bool) {
+        if parenthesized {
+            self.write("(");
+        }
+        self.generate_expr(expr);
+        self.write(" as ");
+        self.write(&self.type_to_string(ty));
+        if parenthesized {
+            self.write(")");
         }
     }
 
     fn generate_literal(&mut self, lit: &Literal) {
         match lit {
+            Literal::Raw(source) => self.write(source),
             Literal::Int(i) => self.write(&i.to_string()),
             Literal::Float(f) => self.write(&f.to_string()),
             Literal::Str(s) => self.write(&format!("\"{}\"", s)),
@@ -575,12 +794,36 @@ impl RustCodeGenerator {
             self.writeln(doc);
         }
         self.writeln(&format!(
-            "{}type {} = {};",
+            "{}type {}{} = {};",
             self.visibility(&t.vis),
             t.name,
+            self.generic_params_to_string(&t.generics),
             self.type_to_string(&t.target)
         ));
         self.writeln("");
+    }
+
+    fn generate_closure_param(&mut self, param: &ClosureParam) {
+        self.write(&param.pattern);
+        if let Some(ty) = &param.ty {
+            self.write(": ");
+            self.write(&self.type_to_string(ty));
+        }
+    }
+
+    fn generic_params_to_string(&self, generics: &[GenericParam]) -> String {
+        if generics.is_empty() {
+            return String::new();
+        }
+
+        format!(
+            "<{}>",
+            generics
+                .iter()
+                .map(|generic| self.generic_param_to_string(generic))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
     }
 
     fn generate_enum(&mut self, e: &EnumDef) {
@@ -609,16 +852,7 @@ impl RustCodeGenerator {
                 if i > 0 {
                     self.write(", ");
                 }
-                self.write(&generic.name);
-                if !generic.bounds.is_empty() {
-                    self.write(": ");
-                    for (j, bound) in generic.bounds.iter().enumerate() {
-                        if j > 0 {
-                            self.write(" + ");
-                        }
-                        self.write(bound);
-                    }
-                }
+                self.write(&self.generic_param_to_string(generic));
             }
             self.writeln("> {");
         }
@@ -727,6 +961,25 @@ impl RustCodeGenerator {
                 s.push('>');
                 s
             }
+            Type::CallableTrait(callable) => {
+                let qualifier = match callable.qualifier {
+                    CallableTraitQualifier::Dyn => "dyn",
+                    CallableTraitQualifier::Impl => "impl",
+                };
+                let args = callable
+                    .args
+                    .iter()
+                    .map(|arg| self.type_to_string(arg))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!(
+                    "{} {}({}) -> {}",
+                    qualifier,
+                    callable.trait_name,
+                    args,
+                    self.type_to_string(&callable.return_type)
+                )
+            }
             Type::Reference(inner, is_reference, mutable) => {
                 format!(
                     "{}{}{}",
@@ -825,16 +1078,7 @@ impl RustCodeGenerator {
                 if i > 0 {
                     self.write(", ");
                 }
-                self.write(&generic.name);
-                if !generic.bounds.is_empty() {
-                    self.write(": ");
-                    for (j, bound) in generic.bounds.iter().enumerate() {
-                        if j > 0 {
-                            self.write(" + ");
-                        }
-                        self.write(bound);
-                    }
-                }
+                self.write(&self.generic_param_to_string(generic));
             }
             self.writeln("> {");
         }
@@ -872,5 +1116,346 @@ impl RustCodeGenerator {
         if self.indent_level > 0 {
             self.indent_level -= 1;
         }
+    }
+}
+
+fn should_separate_after_use(item: &Item, next: Option<&Item>) -> bool {
+    match (item, next) {
+        (Item::Use(current), Some(Item::Use(next))) => use_root(current) != use_root(next),
+        (Item::Use(_), Some(_)) => true,
+        _ => false,
+    }
+}
+
+fn use_root(use_stmt: &UseStatement) -> Option<&str> {
+    use_stmt.path.first().map(String::as_str)
+}
+
+fn ordered_bounds_to_string(bounds: &[String]) -> String {
+    bounds
+        .iter()
+        .filter(|bound| bound.as_str() != "'static")
+        .chain(bounds.iter().filter(|bound| bound.as_str() == "'static"))
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .join(" + ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RustCodeGenerator;
+    use crate::rustlight_ast::{
+        Block, CallableTraitQualifier, CallableTraitType, ClosureParam, Expr, FunctionDef,
+        GenericParam, Item, Literal, Param, PathType, RustModule, Statement, Type, TypeAlias,
+        Visibility,
+    };
+
+    fn callable_target() -> Type {
+        Type::Generic(
+            "Rc".to_string(),
+            vec![Type::CallableTrait(CallableTraitType {
+                qualifier: CallableTraitQualifier::Dyn,
+                trait_name: "Fn".to_string(),
+                args: vec![Type::Named("Int".to_string())],
+                return_type: Box::new(Type::Named("Int".to_string())),
+            })],
+        )
+    }
+
+    fn print_function_body(expr: Expr, target: Type) -> String {
+        let module = RustModule {
+            name: "Cast_Test".to_string(),
+            docs: Vec::new(),
+            items: vec![Item::Function(FunctionDef {
+                name: "cast_closure".to_string(),
+                params: vec![Param {
+                    name: "f".to_string(),
+                    ty: target.clone(),
+                }],
+                return_type: target.clone(),
+                generics: Vec::new(),
+                body: Block {
+                    stmts: Vec::new(),
+                    expr: Some(Box::new(expr)),
+                },
+                asyncness: false,
+                vis: Visibility::Public,
+                docs: Vec::new(),
+                attrs: Vec::new(),
+            })],
+            attrs: Vec::new(),
+            vis: Visibility::Private,
+        };
+
+        RustCodeGenerator::new().generate_module_code(&module)
+    }
+
+    #[test]
+    fn prints_structured_cast_expression() {
+        let target = callable_target();
+        let printed = print_function_body(
+            Expr::Cast(Box::new(Expr::Ident("f".to_string())), target.clone()),
+            target,
+        );
+        assert!(printed.contains("(f as Rc<dyn Fn(Int) -> Int>)"));
+    }
+
+    #[test]
+    fn avoids_duplicate_parentheses_around_cast() {
+        let target = callable_target();
+        let printed = print_function_body(
+            Expr::Parenthesized(Box::new(Expr::Cast(
+                Box::new(Expr::Ident("f".to_string())),
+                target.clone(),
+            ))),
+            target,
+        );
+        assert!(printed.contains("(f as Rc<dyn Fn(Int) -> Int>)"));
+        assert!(!printed.contains("((f as Rc<dyn Fn(Int) -> Int>))"));
+    }
+
+    #[test]
+    fn omits_outer_cast_parentheses_in_call_arguments() {
+        let target = callable_target();
+        let cast = Expr::Parenthesized(Box::new(Expr::Cast(
+            Box::new(Expr::Ident("f".to_string())),
+            target.clone(),
+        )));
+        let printed = print_function_body(
+            Expr::Call(
+                Box::new(Expr::Path(
+                    vec!["Reg".to_string(), "Reg".to_string()],
+                    PathType::Namespace,
+                )),
+                vec![cast],
+            ),
+            target,
+        );
+        assert!(printed.contains("Reg::Reg(f as Rc<dyn Fn(Int) -> Int>)"));
+        assert!(!printed.contains("Reg::Reg((f as Rc<dyn Fn(Int) -> Int>))"));
+    }
+
+    #[test]
+    fn omits_redundant_parentheses_around_block_call_arguments() {
+        let printed = print_function_body(
+            Expr::Call(
+                Box::new(Expr::Ident("f".to_string())),
+                vec![Expr::Parenthesized(Box::new(Expr::Block(Block {
+                    stmts: Vec::new(),
+                    expr: Some(Box::new(Expr::Ident("x".to_string()))),
+                })))],
+            ),
+            Type::Named("Int".to_string()),
+        );
+        assert!(printed.contains("f({"));
+        assert!(!printed.contains("f(({"));
+    }
+
+    #[test]
+    fn omits_redundant_parentheses_around_unary_call_arguments() {
+        let printed = print_function_body(
+            Expr::Call(
+                Box::new(Expr::Ident("f".to_string())),
+                vec![Expr::Parenthesized(Box::new(Expr::UnaryOp(
+                    "-".to_string(),
+                    Box::new(Expr::Ident("i".to_string())),
+                )))],
+            ),
+            Type::Named("Int".to_string()),
+        );
+        assert!(printed.contains("f(-i)"));
+        assert!(!printed.contains("f((-i))"));
+    }
+
+    #[test]
+    fn preserves_tuple_parentheses_in_call_arguments() {
+        let printed = print_function_body(
+            Expr::Call(
+                Box::new(Expr::Ident("f".to_string())),
+                vec![Expr::Parenthesized(Box::new(Expr::Tuple(vec![
+                    Expr::Ident("a".to_string()),
+                    Expr::Ident("b".to_string()),
+                ])))],
+            ),
+            Type::Named("Int".to_string()),
+        );
+        assert!(printed.contains("f((a, b))"));
+    }
+
+    #[test]
+    fn parenthesizes_borrowed_binary_expressions() {
+        let printed = print_function_body(
+            Expr::Reference(
+                Box::new(Expr::BinaryOp(
+                    Box::new(Expr::Ident("n".to_string())),
+                    "+".to_string(),
+                    Box::new(Expr::Literal(Literal::Int(1))),
+                )),
+                true,
+                false,
+            ),
+            Type::Named("BigInt".to_string()),
+        );
+        assert!(printed.contains("&(n + 1)"));
+    }
+
+    #[test]
+    fn prints_explicit_closure_return_types() {
+        let printed = print_function_body(
+            Expr::TypedClosure(
+                vec![ClosureParam::typed("x", Type::Named("Int".to_string()))],
+                Type::Named("Pred<Unit>".to_string()),
+                Box::new(Expr::Macro("panic!(\"partial\")".to_string())),
+                true,
+            ),
+            callable_target(),
+        );
+        assert!(printed.contains("move |x: Int| -> Pred<Unit> { panic!(\"partial\") }"));
+    }
+
+    #[test]
+    fn prints_generic_type_alias_parameters_and_bounds() {
+        let module = RustModule {
+            name: "Alias_Test".to_string(),
+            docs: Vec::new(),
+            items: vec![Item::TypeAlias(TypeAlias {
+                name: "Callback".to_string(),
+                target: Type::Generic("Rc".to_string(), vec![Type::Named("T".to_string())]),
+                generics: vec![GenericParam {
+                    name: "T".to_string(),
+                    bounds: vec!["Clone".to_string()],
+                }],
+                vis: Visibility::Public,
+                docs: Vec::new(),
+            })],
+            attrs: Vec::new(),
+            vis: Visibility::Private,
+        };
+        let mut generator = RustCodeGenerator::new();
+        let printed = generator.generate_module_code(&module);
+
+        assert!(printed.contains("pub type Callback<T: Clone> = Rc<T>;"));
+    }
+
+    #[test]
+    fn prints_bare_return_statement() {
+        let module = RustModule {
+            name: "Return_Test".to_string(),
+            docs: Vec::new(),
+            items: vec![Item::Function(FunctionDef {
+                name: "early_exit".to_string(),
+                params: Vec::new(),
+                return_type: Type::Unit,
+                generics: Vec::new(),
+                body: Block {
+                    stmts: vec![Statement::Return(None)],
+                    expr: None,
+                },
+                asyncness: false,
+                vis: Visibility::Public,
+                docs: Vec::new(),
+                attrs: Vec::new(),
+            })],
+            attrs: Vec::new(),
+            vis: Visibility::Private,
+        };
+
+        let printed = RustCodeGenerator::new().generate_module_code(&module);
+        assert!(printed.contains("return;"));
+    }
+
+    #[test]
+    fn prints_return_statement_with_value() {
+        let module = RustModule {
+            name: "Return_Test".to_string(),
+            docs: Vec::new(),
+            items: vec![Item::Function(FunctionDef {
+                name: "return_value".to_string(),
+                params: Vec::new(),
+                return_type: Type::Named("Int".to_string()),
+                generics: Vec::new(),
+                body: Block {
+                    stmts: vec![Statement::Return(Some(Expr::Ident("value".to_string())))],
+                    expr: None,
+                },
+                asyncness: false,
+                vis: Visibility::Public,
+                docs: Vec::new(),
+                attrs: Vec::new(),
+            })],
+            attrs: Vec::new(),
+            vis: Visibility::Private,
+        };
+
+        let printed = RustCodeGenerator::new().generate_module_code(&module);
+        assert!(printed.contains("return value;"));
+    }
+
+    #[test]
+    fn prints_nested_else_if_without_an_extra_block() {
+        let bool_block = |value| Block {
+            stmts: Vec::new(),
+            expr: Some(Box::new(Expr::Literal(Literal::Bool(value)))),
+        };
+        let nested_if = Expr::If {
+            condition: Box::new(Expr::Ident("inner".to_string())),
+            then_branch: bool_block(true),
+            else_branch: Some(bool_block(false)),
+        };
+        let printed = print_function_body(
+            Expr::If {
+                condition: Box::new(Expr::Ident("outer".to_string())),
+                then_branch: bool_block(true),
+                else_branch: Some(Block {
+                    stmts: Vec::new(),
+                    expr: Some(Box::new(nested_if)),
+                }),
+            },
+            Type::Named("bool".to_string()),
+        );
+
+        assert!(printed.contains("} else if inner {"));
+        assert!(!printed.contains("} else {\n        if inner"));
+    }
+
+    #[test]
+    fn prints_while_loop() {
+        let printed = print_function_body(
+            Expr::While {
+                condition: Box::new(Expr::BinaryOp(
+                    Box::new(Expr::Ident("i".to_string())),
+                    "<".to_string(),
+                    Box::new(Expr::Literal(Literal::Int(10))),
+                )),
+                body: Block {
+                    stmts: vec![Statement::Break],
+                    expr: None,
+                },
+            },
+            Type::Unit,
+        );
+
+        assert!(printed.contains("while i < 10 {\n        break;\n    }"));
+    }
+
+    #[test]
+    fn prints_for_loop() {
+        let printed = print_function_body(
+            Expr::For {
+                pattern: "i".to_string(),
+                iter: Box::new(Expr::Array(vec![
+                    Expr::Literal(Literal::Int(1)),
+                    Expr::Literal(Literal::Int(2)),
+                    Expr::Literal(Literal::Int(3)),
+                ])),
+                body: Block {
+                    stmts: vec![Statement::Continue],
+                    expr: None,
+                },
+            },
+            Type::Unit,
+        );
+
+        assert!(printed.contains("for i in [1, 2, 3] {\n        continue;\n    }"));
     }
 }

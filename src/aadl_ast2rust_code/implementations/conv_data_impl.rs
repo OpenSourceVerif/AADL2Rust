@@ -98,6 +98,8 @@ pub fn convert_data_implementation(
                         ty: Type::Reference(Box::new(Type::Named("Self".to_string())), true, true),
                     }],
                     return_type: Type::Unit,
+                    // Generated shared-data accessors are non-generic.
+                    generics: Vec::new(),
                     body: Block {
                         stmts: method_body,
                         expr: None,
@@ -137,6 +139,8 @@ pub fn convert_data_implementation(
                 name: "new".to_string(),
                 params: vec![],
                 return_type: Type::Named("Self".to_string()),
+                // Generated shared-data constructors are non-generic.
+                generics: Vec::new(),
                 body: Block {
                     stmts: vec![Statement::Expr(Expr::Ident(struct_init_code))],
                     expr: None,
@@ -176,6 +180,8 @@ pub fn convert_data_implementation(
             let type_alias = TypeAlias {
                 name: shared_type_name,
                 target: shared_type,
+                // Shared-data aliases currently bind one concrete implementation type.
+                generics: Vec::new(),
                 vis: Visibility::Public,
                 docs: vec![
                     format!("// Shared data type for {}", impl_.name.type_identifier),
@@ -434,7 +440,9 @@ fn determine_union_impl(
         name: impl_.name.type_identifier.clone(),
         fields,
         generics: vec![],
-        derives: vec!["Debug".to_string(), "Clone".to_string()],
+        // Rust unions have no active-field discriminator, so `Debug` cannot be derived safely.
+        // Deriving `Clone` for a union requires `Copy`, which is valid for union-compatible fields.
+        derives: vec!["Copy".to_string(), "Clone".to_string()],
         docs: vec![format!("// AADL Union: {}", impl_.name.type_identifier)],
         vis: Visibility::Public,
     }

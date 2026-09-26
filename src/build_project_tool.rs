@@ -10,6 +10,16 @@ pub struct TestCase {
 }
 
 pub fn assemble_rust_project(test_case: &TestCase) {
+    assemble_project(test_case, false);
+}
+
+/// Link an externally compiled BA while keeping the ordinary generated thread,
+/// port types and project modules. Regeneration copies Glue from the input tree.
+pub fn assemble_external_ba_project(test_case: &TestCase) {
+    assemble_project(test_case, true);
+}
+
+fn assemble_project(test_case: &TestCase, external_ba: bool) {
     let project_root = format!("generate/project/{}", test_case.output_name);
 
     // ---------------- Cargo.toml ----------------
@@ -38,7 +48,9 @@ pub fn assemble_rust_project(test_case: &TestCase) {
     }
 
     // ---------------- build.rs ----------------
-    if c_files.is_empty() || h_files.is_empty() {
+    if external_ba {
+        generate_external_ba_build(test_case, &project_root);
+    } else if c_files.is_empty() || h_files.is_empty() {
         generate_empty_build_rs(&project_root);
     } else {
         generate_build_rs_from_c_files(&project_root, &c_files, &h_files);
@@ -61,6 +73,52 @@ pub fn assemble_rust_project(test_case: &TestCase) {
     );
 
     println!("📦 Project generation completed: {}", project_root);
+}
+
+/// The BA compiler and Rust must target the same ABI. The production object is
+/// always separate from the optional object that adds read-only test probes.
+fn generate_external_ba_build(test_case: &TestCase, project_root: &str) {
+    let input = Path::new(&test_case.path);
+    for (source, destination) in [
+        ("ba_glue.rs", "src/ba_glue.rs"),
+        ("ba_behavior.o", "c_src/ba_behavior.o"),
+        ("ba_probes.o", "c_src/ba_probes.o"),
+    ] {
+        if input.join(source).is_file() {
+            fs::copy(input.join(source), Path::new(project_root).join(destination))
+                .expect("Failed to copy external BA artifact");
+        }
+    }
+    let manifest_path = Path::new(project_root).join("Cargo.toml");
+    let mut manifest = fs::read_to_string(&manifest_path).unwrap();
+    manifest.push_str("\n[features]\n# Only tests may link private-state observation functions.\nba-probes = []\n");
+    fs::write(manifest_path, manifest).unwrap();
+    let build = r#"// CompCert supplies the BA object; do not compile its C with a different compiler.
+use std::{env, path::Path};
+
+fn main() {
+    assert_eq!(env::var("CARGO_CFG_TARGET_ARCH").unwrap(), "x86_64", "BA object requires x86-64");
+    assert_eq!(env::var("CARGO_CFG_TARGET_OS").unwrap(), "linux", "BA object requires Linux");
+    let object = if env::var_os("CARGO_FEATURE_BA_PROBES").is_some() {
+        "c_src/ba_probes.o"
+    } else {
+        "c_src/ba_behavior.o"
+    };
+    println!("cargo:rerun-if-changed={object}");
+    println!("cargo:rerun-if-changed=c_include/ba.h");
+    assert!(Path::new(object).is_file(), "Generate the CompCert BA object before building the host");
+    cc::Build::new().object(object).compile("ba_behavior");
+    // A single header owns lifecycle imports; no per-header output overwrites.
+    bindgen::Builder::default()
+        .header("c_include/ba.h")
+        .clang_arg("-Ic_include")
+        .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
+        .generate().expect("BA lifecycle bindings failed")
+        .write_to_file(Path::new(&env::var("OUT_DIR").unwrap()).join("aadl_c_bindings.rs"))
+        .expect("Failed to write BA bindings");
+}
+"#;
+    fs::write(Path::new(project_root).join("build.rs"), build).unwrap();
 }
 
 /// generate Cargo.toml

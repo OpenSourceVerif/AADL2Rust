@@ -1,4 +1,4 @@
-// crates/aadl_intermediate/src/intermediate_ast.rs
+// crates/rustlightast/src/rustlight_ast.rs
 
 /// Lightweight Rust abstract syntax tree (module level)
 #[derive(Debug, Clone)]
@@ -41,7 +41,7 @@ pub struct StructDef {
 #[derive(Debug, Clone)]
 pub struct UnionDef {
     pub name: String,
-    pub fields: Vec<Field>,            // union fields
+    pub fields: Vec<Field>, // union fields
     pub generics: Vec<GenericParam>,
     pub derives: Vec<String>, // #[derive(...)]
     pub docs: Vec<String>,
@@ -65,6 +65,7 @@ pub struct FunctionDef {
     pub name: String,
     pub params: Vec<Param>,
     pub return_type: Type,
+    pub generics: Vec<GenericParam>,
     pub body: Block,
     pub asyncness: bool,
     pub vis: Visibility,
@@ -96,6 +97,7 @@ pub struct ConstDef {
 pub struct TypeAlias {
     pub name: String,
     pub target: Type,
+    pub generics: Vec<GenericParam>,
     pub vis: Visibility,
     pub docs: Vec<String>,
 }
@@ -108,12 +110,66 @@ pub enum Type {
     Path(Vec<String>),                // std::vec::Vec
     Named(String),                    // i32, String
     Generic(String, Vec<Type>),       // HashMap<K, V>
+    CallableTrait(CallableTraitType), // dyn Fn(A) -> B / impl Fn(A) -> B
     Reference(Box<Type>, bool, bool), // &mut T, first bool indicates reference, second bool indicates mutability
     Tuple(Vec<Type>),                 // (T1, T2)
     Slice(Box<Type>),                 // [T]
     Array(Box<Type>, usize),          // [T; N] fixed-size array
     Unit,                             // ()
     Never,                            // !
+}
+
+/// Callable trait type such as `dyn Fn(A) -> B` or `impl Fn(A) -> B`.
+#[derive(Debug, Clone)]
+pub struct CallableTraitType {
+    pub qualifier: CallableTraitQualifier,
+    pub trait_name: String,
+    pub args: Vec<Type>,
+    pub return_type: Box<Type>,
+}
+
+#[derive(Debug, Clone)]
+pub enum CallableTraitQualifier {
+    Dyn,
+    Impl,
+}
+
+/// A closure parameter with its pattern and optional type kept separately.
+///
+/// Keeping the type structured lets optimization passes inspect and rewrite
+/// closure annotations without reparsing a printed `pattern: Type` string.
+#[derive(Debug, Clone)]
+pub struct ClosureParam {
+    pub pattern: String,
+    pub ty: Option<Type>,
+}
+
+impl ClosureParam {
+    pub fn untyped(pattern: impl Into<String>) -> Self {
+        Self {
+            pattern: pattern.into(),
+            ty: None,
+        }
+    }
+
+    pub fn typed(pattern: impl Into<String>, ty: Type) -> Self {
+        Self {
+            pattern: pattern.into(),
+            ty: Some(ty),
+        }
+    }
+}
+
+impl From<&str> for ClosureParam {
+    fn from(pattern: &str) -> Self {
+        Self::untyped(pattern)
+    }
+}
+
+impl From<String> for ClosureParam {
+    fn from(pattern: String) -> Self {
+        Self::untyped(pattern)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -126,14 +182,30 @@ pub enum PathType {
 #[derive(Debug, Clone)]
 pub enum Expr {
     Ident(String),
+    /// An opaque macro invocation preserved as Rust source, e.g. `panic!("msg")`.
+    Macro(String),
     Path(Vec<String>, PathType),
     Literal(Literal),
+    Array(Vec<Expr>),
+    Tuple(Vec<Expr>),
     Call(Box<Expr>, Vec<Expr>),
     MethodCall(Box<Expr>, String, Vec<Expr>),
     Block(Block),
     Loop(Box<Block>),
+    While {
+        condition: Box<Expr>,
+        body: Block,
+    },
+    For {
+        pattern: String,
+        iter: Box<Expr>,
+        body: Block,
+    },
     Await(Box<Expr>),
-    Closure(Vec<String>, Box<Expr>),
+    /// `(params, body, is_move)` — third field is `true` for `move |…| …` closures.
+    Closure(Vec<ClosureParam>, Box<Expr>, bool),
+    /// A closure whose explicit Rust return type must survive parse/print.
+    TypedClosure(Vec<ClosureParam>, Type, Box<Expr>, bool),
     BuilderChain(Vec<BuilderMethod>), // represents builder-style chained calls
     Unsafe(Box<Block>),               // unsafe expression support
     If {
@@ -156,6 +228,7 @@ pub enum Expr {
     UnaryOp(String, Box<Expr>),       // op expr, e.g., !x, -y
     Index(Box<Expr>, Box<Expr>),      // expr[index], e.g., array[i]
     Parenthesized(Box<Expr>),         // (expr), e.g., (a + b)
+    Cast(Box<Expr>, Type),            // expr as Type
     Assign(Box<Expr>, Box<Expr>), // left = right, e.g., state = State::S0 // lazy_static! macro support
 }
 
@@ -181,6 +254,9 @@ pub enum BuilderMethod {
 /// Literal
 #[derive(Debug, Clone)]
 pub enum Literal {
+    /// Literal source preserved verbatim when its spelling carries Rust type or
+    /// escaping information that must survive a parse/print round trip.
+    Raw(String),
     Int(i64),
     Float(f64),
     Str(String),
@@ -201,6 +277,7 @@ pub enum Statement {
     Let(LetStmt),
     Expr(Expr),
     Item(Box<Item>),
+    Return(Option<Expr>), // return; / return expr;
     Continue,        // continue statement
     Break,           // break statement
     Comment(String), // comment statement

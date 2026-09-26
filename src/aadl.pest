@@ -95,7 +95,7 @@ prototype_declaration = {
 // 8 Features
 feature_declaration = {
     identifier ~ ":" ~ (
-        (direction? ~ port_type ~ qualified_identifier?) |
+        (direction? ~ port_type ~ qualified_identifier? ~ port_properties?) |
         (access_direction? ~ access_type ~ "access" ~ qualified_identifier?)
     ) ~ ";"
 }
@@ -133,6 +133,9 @@ property_association = {
     ";"
 }
 
+// A port's property associations belong to that feature, not its component.
+port_properties = { "{" ~ property_association+ ~ "}" }
+
 applies_to_clause = {
     "applies" ~ "to" ~ qualified_identifier ~ ("," ~ qualified_identifier)*
 }
@@ -143,6 +146,7 @@ constant = { "constant" }
 
 property_value = {
     list_value |
+    record_value |
     range_value | 
     literal_value | 
     reference_value |
@@ -155,6 +159,9 @@ range_value = {
     (number | identifier) ~ WHITESPACE* ~ unit? 
 }
 list_value = { "(" ~ (property_value ~ ("," ~ property_value)*)? ~ ")" }
+// Preserve record fields and recursively structured values (e.g. Input_Time).
+record_value = { "[" ~ record_field+ ~ "]" }
+record_field = { identifier ~ "=>" ~ property_value ~ ";" }
 reference_value = { "reference" ~ "(" ~ qualified_identifier ~ ")" }
 component_classifier_value = { "classifier" ~ "(" ~ qualified_identifier ~ ")" }
 
@@ -172,7 +179,8 @@ string_literal = {
 
 boolean = { "true" | "false"}
 enum_value = @{
-    "Periodic" | "Sporadic" | "Aperiodic" | "Timed" | "Event" | "Hybrid" |
+    "Periodic" | "Sporadic" | "Aperiodic" | "Timed" | "Event" | "Hybrid" | "Background" |
+    "No_IO" |
     "native"  | "Struct" | 
     "Boolean" | "Signed" |  "Float" | "Simple" | "Double" | "Character" | "String" | 
     "Struct" | "Union" | "Enum" | "Fixed" | "Array" | "TaggedUnion" |

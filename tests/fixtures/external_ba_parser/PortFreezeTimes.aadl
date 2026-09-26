@@ -1,0 +1,43 @@
+-- A frozen list overrides No_IO; an unlisted No_IO input waits for p>>.
+package PortFreezeTimes_Example
+public
+  with Data_Model;
+  data Signed32
+    properties
+      Data_Model::Data_Representation => Integer;
+      Source_Data_Size => 4 Bytes;
+  end Signed32;
+  thread Worker
+    features
+      tick : in event port;
+      selected_input : in data port Signed32 {
+        Input_Time => ([Time => 0 ms; Time_Reference => No_IO;]);
+      };
+      deferred_input : in data port Signed32 {
+        Input_Time => ([Time => 0 ms; Time_Reference => No_IO;]);
+      };
+  end Worker;
+  thread implementation Worker.impl
+    properties
+      Dispatch_Protocol => Periodic;
+      Period => 10 ms;
+    annex behavior_specification {**
+      variables
+        selected_value : Signed32 := 0;
+        before_freeze : Signed32 := 0;
+        after_freeze : Signed32 := 0;
+      states
+        s_initial : initial state;
+        s_ready : complete state;
+        s_final : final state;
+      transitions
+        initialize : s_initial -[]-> s_ready;
+        process : s_ready -[on dispatch frozen(selected_input)]-> s_final {
+          selected_value := selected_input;
+          before_freeze := deferred_input'count;
+          deferred_input>>;
+          after_freeze := deferred_input
+        };
+    **};
+  end Worker.impl;
+end PortFreezeTimes_Example;

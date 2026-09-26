@@ -28,6 +28,9 @@ use compiler::build_project_tool::*;
 struct Args {
     #[arg(short, long)]
     input: Option<String>,
+    /// Bind one existing thread implementation to the supplied ba_glue module.
+    #[arg(long, requires = "input")]
+    external_ba: Option<String>,
 }
 
 fn main() {
@@ -58,7 +61,7 @@ fn main() {
             fs::remove_dir_all(&output_dir).unwrap();
         }
 
-        process_test_case(&test_case);
+        process_test_case(&test_case, args.external_ba.as_deref());
         return; // Do not enter the interactive mode below
     }
 
@@ -253,7 +256,7 @@ fn main() {
             }
 
             // Process the selected test case
-            process_test_case(test_case);
+            process_test_case(test_case, None);
         }
         None => {
             println!(
@@ -264,7 +267,7 @@ fn main() {
     }
 }
 
-fn process_test_case(test_case: &TestCase) {
+fn process_test_case(test_case: &TestCase, external_ba: Option<&str>) {
     println!("Start processing: {}", test_case.name);
 
     let aadl_input = match read_aadl_inputs(&test_case.path) {
@@ -314,12 +317,25 @@ fn process_test_case(test_case: &TestCase) {
 
             println!("\n==================================== Generating Rust Code ===================================");
             let mut converter = AadlConverter::default();
+            // Register the complete case before converting individual packages so
+            // external AADL libraries do not become unresolved Rust module imports.
+            converter.set_available_packages(&ast);
+            if let Some(target) = external_ba {
+                if let Err(error) = converter.set_external_ba_target(target, &ast) {
+                    eprintln!("External BA integration error: {error}");
+                    std::process::exit(2);
+                }
+            }
             for package in ast.iter() {
                 generate_rust_code_for_test_case(package, test_case, ast.len(), &mut converter);
             }
 
             // Generate Cargo.toml, build.rs, etc. for the project
-            assemble_rust_project(test_case);
+            if external_ba.is_some() {
+                assemble_external_ba_project(test_case);
+            } else {
+                assemble_rust_project(test_case);
+            }
         }
         Err(e) => {
             eprintln!("Parsing failed: {}", e);
@@ -340,6 +356,10 @@ fn process_test_case(test_case: &TestCase) {
             }
 
             eprintln!("Parsing failed, processing aborted");
+            if external_ba.is_some() {
+                // Integration runners must not mistake an unsupported parser feature for success.
+                std::process::exit(2);
+            }
         }
     }
 }

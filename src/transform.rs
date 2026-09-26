@@ -450,6 +450,7 @@ impl AADLTransformer {
         let mut access_direction: Option<AccessDirection> = None;
         let mut access_type_str: Option<&str> = None; // "data" | "subprogram"
         let mut classifier_qname: Option<String> = None; // qualified_identifier or identifier
+        let mut properties = Vec::new();
 
         for inner in inner_iter {
             match inner.as_rule() {
@@ -476,6 +477,10 @@ impl AADLTransformer {
                 }
                 aadlight_parser::Rule::qualified_identifier => {
                     classifier_qname = Some(inner.as_str().to_string());
+                }
+                aadlight_parser::Rule::port_properties => {
+                    // Retain the original associations on this port, including Input_Time.
+                    properties.extend(inner.into_inner().map(Self::transform_property_association));
                 }
                 aadlight_parser::Rule::identifier => {
                     // Be compatible with older syntax where identifier is used as the type name
@@ -530,6 +535,7 @@ impl AADLTransformer {
                     PortType::Event => PortDirection::In,
                 }),
                 port_type: resolved_port_type,
+                properties,
             });
         }
 
@@ -855,6 +861,16 @@ impl AADLTransformer {
                     }
                 }
                 PropertyValue::List(elements)
+            }
+            aadlight_parser::Rule::record_value => {
+                let fields = inner.into_inner().map(|field| {
+                    let mut parts = field.into_inner();
+                    PropertyRecordField {
+                        name: extract_identifier(parts.next().expect("record field name")),
+                        value: Self::transform_property_value(parts.next().expect("record field value")),
+                    }
+                }).collect();
+                PropertyValue::Single(PropertyExpression::RecordValue(PropertyRecord { fields }))
             }
             aadlight_parser::Rule::reference_value => {
                 let mut ref_parts = inner.into_inner();

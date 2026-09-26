@@ -7,6 +7,47 @@ use std::process::Command;
 fn all_aadl_models_should_generate_rust_code() {
     //test_mod::run_all_test_cases();
     run_all_case_folders();
+    assert_data_case_uses_compilable_string_and_union_types();
+    assert_rma_skips_unavailable_processor_module();
+}
+
+fn assert_data_case_uses_compilable_string_and_union_types() {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let data_src = manifest_dir.join("generate").join("project").join("data").join("src");
+
+    let base_types = std::fs::read_to_string(data_src.join("base_types.rs"))
+        .expect("the data case must generate base_types.rs");
+    assert!(
+        base_types.contains("pub type String = std::string::String;"),
+        "the generated AADL String alias must use an absolute Rust path"
+    );
+
+    let composite_types = std::fs::read_to_string(data_src.join("base_types_example_types.rs"))
+        .expect("the data case must generate base_types_example_types.rs");
+    for union_name in ["A_Union1", "A_Union2"] {
+        let expected = format!("#[derive(Copy, Clone)]\npub union {union_name}");
+        assert!(
+            composite_types.contains(&expected),
+            "generated union {union_name} must derive Copy and Clone without Debug"
+        );
+    }
+}
+
+fn assert_rma_skips_unavailable_processor_module() {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let generated_rma = manifest_dir
+        .join("generate")
+        .join("project")
+        .join("rma")
+        .join("src")
+        .join("rmaaadl.rs");
+    let source =
+        std::fs::read_to_string(generated_rma).expect("the rma case must generate rmaaadl.rs");
+
+    assert!(
+        !source.contains("use crate::processors::*;"),
+        "an unavailable external AADL package must not become a Rust module import"
+    );
 }
 
 pub fn all_case_folders() -> Vec<&'static str> {

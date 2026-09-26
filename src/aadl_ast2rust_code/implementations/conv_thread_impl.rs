@@ -9,6 +9,9 @@ use crate::ast::aadl_ast_cj::*;
 use std::collections::HashMap;
 use crate::aadl_ast2rust_code::tool::*;
 
+#[path = "external_ba_hook.rs"]
+mod external_ba_hook;
+
 
 pub fn convert_thread_implemenation(temp_converter: &mut AadlConverter, impl_: &ComponentImplementation) -> Vec<Item> {
     let mut items = Vec::new();
@@ -17,6 +20,9 @@ pub fn convert_thread_implemenation(temp_converter: &mut AadlConverter, impl_: &
     let mut fields = Vec::new(); // For thread implementations, there are no features; fields are derived from properties here
     let struct_name = format!("{}Thread", to_upper_camel_case(&impl_.name.type_identifier));
     let mut field_values = HashMap::new();
+    if temp_converter.uses_external_ba(impl_) {
+        fields.extend(external_ba_hook::context_fields(external_ba_hook::uses_event_tickets(temp_converter.external_ba_protocol(impl_).as_deref())));
+    }
 
     // Merge implementation-level properties into fields and store property values
     if let PropertyClause::Properties(props) = &impl_.properties {
@@ -77,15 +83,21 @@ pub fn convert_thread_implemenation(temp_converter: &mut AadlConverter, impl_: &
             ty: Type::Reference(Box::new(Type::Named("self".to_string())), false, true),
         }],
         return_type: Type::Unit,
+        // Generated thread lifecycle methods are non-generic.
+        generics: Vec::new(),
         body: create_thread_run_body(temp_converter, impl_),
         asyncness: false,
         vis: Visibility::None,
         docs: vec![
             "// Thread execution entry point".to_string(),
-            format!(
-                "// Period: {:?} ms",
-                extract_property_value(temp_converter, impl_, "period")
-            ),
+            if temp_converter.uses_external_ba(impl_) {
+                match temp_converter.external_ba_period_nanoseconds(impl_) {
+                    Some(value) => format!("// Effective external host Period: {value} ns."),
+                    None => "// This external activation protocol does not require a Period.".to_string(),
+                }
+            } else {
+                format!("// Period: {:?} ms", extract_property_value(temp_converter, impl_, "period"))
+            },
         ],
         attrs: Vec::new(),
     }));
@@ -100,6 +112,10 @@ pub fn convert_thread_implemenation(temp_converter: &mut AadlConverter, impl_: &
         trait_impl: Some(Type::Named("Thread".to_string())),
     };
     items.push(Item::Impl(impl_block));
+
+    if temp_converter.uses_external_ba(impl_) {
+        items.push(external_ba_hook::lifecycle_impl(temp_converter, impl_));
+    }
 
     // Add an extra impl block to generate methods not included in the trait,
     // i.e., a new() method variant that takes shared-variable parameters.
@@ -171,6 +187,10 @@ fn create_thread_new_method(temp_converter: &mut AadlConverter, impl_: &Componen
     
     // Add CPU ID field initialization
     field_initializations.push("            cpu_id: cpu_id, // CPU ID".to_string());
+    if temp_converter.uses_external_ba(impl_) {
+        // Connections are installed after new(); BA initialization must wait until run().
+        field_initializations.extend(external_ba_hook::context_initializers(temp_converter, impl_));
+    }
     
     // Create struct literal return statement
     let struct_literal = format!("Self {{\n{}\n        }} // finalize thread", field_initializations.join("\n"));
@@ -185,6 +205,8 @@ fn create_thread_new_method(temp_converter: &mut AadlConverter, impl_: &Componen
         name: "new".to_string(),
         params,
         return_type: Type::Named("Self".to_string()),
+        // Generated thread lifecycle methods are non-generic.
+        generics: Vec::new(),
         body,
         asyncness: false,
         vis: Visibility::None,
@@ -221,8 +243,25 @@ fn create_thread_run_body(temp_converter: &AadlConverter, impl_: &ComponentImple
     
     //======================= Thread priority setup ========================
     // Check whether a priority property exists
-    let priority = extract_property_value(temp_converter, impl_, "priority");
-    let period = extract_property_value(temp_converter, impl_, "period");
+    let external_ba = temp_converter.uses_external_ba(impl_);
+    // A thread Period/Priority alone does not create processor metadata. Both
+    // native and external hosts must only reference definitions actually emitted.
+    let cpu_setup_available = temp_converter.has_cpu_schedule_mapping();
+    let priority = if cpu_setup_available {
+        extract_property_value(temp_converter, impl_, "priority")
+    } else { None };
+    let period = if cpu_setup_available && temp_converter.has_period_priority_helper() {
+        extract_property_value(temp_converter, impl_, "period")
+    } else { None };
+    if !cpu_setup_available {
+        stmts.push(Statement::Comment(
+            if external_ba {
+                "No collected processor deployment: leave OS priority and affinity unchanged. The BA host loop is not a wall-clock scheduling verification."
+            } else {
+                "No collected processor deployment: leave OS priority and affinity unchanged; retain the native dispatch loop."
+            }.to_string(),
+        ));
+    }
     
     // If the thread has a priority property, set thread priority
     if let Some(priority) = priority {
@@ -423,6 +462,7 @@ fn create_thread_run_body(temp_converter: &AadlConverter, impl_: &ComponentImple
 
     // ==================== Step 0.5: CPU affinity setup ====================
     // If cpu_id > -1, bind the thread to the specified CPU
+    if cpu_setup_available {
     stmts.push(Statement::Expr(Expr::If {
         condition: Box::new(Expr::BinaryOp(
             Box::new(Expr::Path(
@@ -449,9 +489,16 @@ fn create_thread_run_body(temp_converter: &AadlConverter, impl_: &ComponentImple
         },
         else_branch: None,
     }));
+    }
 
     // ==================== Step 1: Retrieve dispatch protocol ====================
     let dispatch_protocol = extract_dispatch_protocol(temp_converter, impl_);
+
+    if temp_converter.uses_external_ba(impl_) {
+        stmts.push(external_ba_hook::initialize_call());
+        stmts.extend(external_ba_hook::run_loop(temp_converter, impl_));
+        return Block { stmts, expr: None };
+    }
     
     // ==================== Step 2: Generate execution logic based on dispatch protocol ====================
     match dispatch_protocol.as_deref() {
@@ -522,7 +569,7 @@ fn create_periodic_execution_logic(temp_converter: &AadlConverter, impl_: &Compo
     // Check whether Behavior Annex exists
     let mut if_has_ba = false;
     
-    if annex_converter.find_behavior_annex(impl_).is_some(){
+    if !temp_converter.uses_external_ba(impl_) && annex_converter.find_behavior_annex(impl_).is_some(){
         if_has_ba = true;
         stmts.extend(annex_converter.generate_ba_variables_states(impl_, annex_converter.find_behavior_annex(impl_).unwrap()));
     } 
@@ -657,7 +704,11 @@ fn create_aperiodic_execution_logic(temp_converter: &AadlConverter, impl_: &Comp
             let mut loop_stmts = Vec::new();
             
             // Add event collection logic
-            loop_stmts.extend(create_event_collection_logic(&port_urgency, &receive_ports));
+            loop_stmts.extend(if temp_converter.uses_external_ba(impl_) {
+                external_ba_hook::event_collection(temp_converter, impl_, &port_urgency)
+            } else {
+                create_event_collection_logic(&port_urgency, &receive_ports)
+            });
             
             // If events exist, pick the highest-priority one to handle
             loop_stmts.push(Statement::Expr(Expr::IfLet {
@@ -808,7 +859,11 @@ fn create_sporadic_execution_logic(temp_converter: &AadlConverter, impl_: &Compo
             let mut loop_stmts = Vec::new();
             
             // Add event collection logic
-            loop_stmts.extend(create_event_collection_logic(&port_urgency, &receive_ports));
+            loop_stmts.extend(if temp_converter.uses_external_ba(impl_) {
+                external_ba_hook::event_collection(temp_converter, impl_, &port_urgency)
+            } else {
+                create_event_collection_logic(&port_urgency, &receive_ports)
+            });
             
             // If events exist, pick the highest-priority one to handle
             loop_stmts.push(Statement::Expr(Expr::IfLet {
@@ -1122,11 +1177,18 @@ fn create_timed_execution_logic(temp_converter: &AadlConverter, impl_: &Componen
 
 /// Create subprogram call handling logic (extract shared part)
 fn create_subprogram_call_logic(temp_converter: &AadlConverter, impl_: &ComponentImplementation) -> Vec<Statement> {
+    if temp_converter.uses_external_ba(impl_) {
+        return vec![external_ba_hook::dispatch_call(false)];
+    }
     create_subprogram_call_logic_with_data(temp_converter, impl_, false)
 }
 
 /// Create subprogram call handling logic (data-parameter variant)
 fn create_subprogram_call_logic_with_data(temp_converter: &AadlConverter, impl_: &ComponentImplementation, has_receiving_subprograms: bool) -> Vec<Statement> {
+    if temp_converter.uses_external_ba(impl_) {
+        // The unchanged event loop stores its selected AADL port name in val.
+        return vec![external_ba_hook::dispatch_call(true)];
+    }
     let mut port_handling_stmts = Vec::new();
 
     // Extract subprogram call info with parameter ports
@@ -1414,6 +1476,9 @@ fn extract_property_value(temp_converter: &AadlConverter, impl_: &ComponentImple
 
 // Helper: extract dispatch protocol
 fn extract_dispatch_protocol(temp_converter: &AadlConverter, impl_: &ComponentImplementation) -> Option<String> {
+    if let Some(protocol) = temp_converter.external_ba_protocol(impl_) {
+        return Some(protocol);
+    }
     let target_name = "dispatch_protocol";
     for prop in temp_converter.convert_properties(ComponentRef::Impl(impl_)) {
         if prop.name.to_lowercase() == target_name {

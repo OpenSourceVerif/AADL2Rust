@@ -92,6 +92,8 @@ fn generate_c_function_wrapper(
                             ty: param_type,
                         }],
                         return_type: Type::Unit,
+                        // C wrapper signatures are concrete and therefore have no Rust generics.
+                        generics: Vec::new(),
                         body: Block {
                             stmts: vec![Statement::Expr(Expr::Unsafe(Box::new(Block {
                                 stmts: vec![Statement::Expr(Expr::Call(
@@ -160,6 +162,8 @@ fn generate_c_function_wrapper(
                                                 name: "call".to_string(),
                                                 params,
                                                 return_type: Type::Unit,
+                                                // Data-access wrappers are concrete functions.
+                                                generics: Vec::new(),
                                                 body: Block {
                                                     stmts: vec![Statement::Expr(Expr::Unsafe(Box::new(Block {
                                                         stmts: vec![Statement::Expr(Expr::Call(
@@ -201,6 +205,8 @@ fn generate_c_function_wrapper(
             name: "execute".to_string(),
             params: Vec::new(),
             return_type: Type::Unit,
+            // Direct C wrappers are concrete functions.
+            generics: Vec::new(),
             body: Block {
                 stmts: vec![Statement::Expr(Expr::Unsafe(Box::new(Block {
                     stmts: vec![Statement::Expr(Expr::Call(

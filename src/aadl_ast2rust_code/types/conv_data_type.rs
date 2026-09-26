@@ -108,20 +108,26 @@ pub fn convert_data_component(
             // }
         }
     }
-    // Only add into type_mappings if the component identifier does not exist in type_mappings
-    type_mappings
-        .entry(comp.identifier.to_lowercase())
-        .or_insert_with(|| target_type.clone());
+    // Explicit properties describe the payload ABI, even when a classifier name
+    // also occurs in the built-in mappings. Ports must use this same resolved type.
+    type_mappings.insert(comp.identifier.to_lowercase(), target_type.clone());
 
     vec![Item::TypeAlias(TypeAlias {
         name: comp.identifier.clone(),
         target: target_type,
+        // AADL data aliases currently lower to concrete Rust types.
+        generics: Vec::new(),
         vis: Visibility::Public,
         docs: vec![format!("// AADL Data Type: {}", comp.identifier.clone())],
     })]
 }
 
 fn determine_data_type(type_mappings: &HashMap<String, Type>, comp: &ComponentType) -> Type {
+    if let PropertyClause::Properties(props) = &comp.properties {
+        if data_model_property(props, "data_representation").is_some() {
+            return determine_complex_data_type(type_mappings, comp);
+        }
+    }
     // First check whether the component identifier already exists in type_mappings
     // println!("comp.identifier.to_lowercase():{:?}",comp.identifier.to_lowercase());
     if let Some(existing_type) = type_mappings.get(&comp.identifier.to_lowercase()) {
@@ -151,6 +157,9 @@ fn determine_complex_data_type(
                         )) = &bp.value
                         {
                             match str_val.to_lowercase().as_str() {
+                                "integer" => {
+                                    return determine_integer_type(comp, props);
+                                }
                                 "array" => {
                                     return determine_array_type(type_mappings, props);
                                 }
@@ -196,9 +205,86 @@ fn determine_complex_data_type(
     Type::Named("()".to_string())
 }
 
+fn property_named<'a>(props: &'a [Property], name: &str) -> Option<&'a PropertyValue> {
+    props.iter().find_map(|property| match property {
+        Property::BasicProperty(association)
+            if association.identifier.name.eq_ignore_ascii_case(name) =>
+        {
+            Some(&association.value)
+        }
+        _ => None,
+    })
+}
+
+fn data_model_property<'a>(props: &'a [Property], name: &str) -> Option<&'a PropertyValue> {
+    props.iter().find_map(|property| match property {
+        Property::BasicProperty(association)
+            if association.identifier.name.eq_ignore_ascii_case(name)
+                && association.identifier.property_set.as_deref()
+                    .is_some_and(|set| set.eq_ignore_ascii_case("data_model")) =>
+        {
+            Some(&association.value)
+        }
+        _ => None,
+    })
+}
+
+/// Preserve the integer storage ABI instead of treating every Integer as i32.
+/// Source_Data_Size takes precedence over the more general Data_Size property.
+fn determine_integer_type(comp: &ComponentType, props: &[Property]) -> Type {
+    let prefix = match data_model_property(props, "number_representation") {
+        None => "i",
+        Some(PropertyValue::Single(PropertyExpression::String(StringTerm::Literal(value))))
+            if value.eq_ignore_ascii_case("signed") => "i",
+        Some(PropertyValue::Single(PropertyExpression::String(StringTerm::Literal(value))))
+            if value.eq_ignore_ascii_case("unsigned") => "u",
+        Some(value) => panic!(
+            "unsupported integer Number_Representation for {}: {value:?}", comp.identifier
+        ),
+    };
+    let size = property_named(props, "source_data_size")
+        .or_else(|| property_named(props, "data_size"));
+    let bits = match size {
+        None => 32,
+        Some(PropertyValue::Single(PropertyExpression::Integer(
+            SignedIntergerOrConstant::Real(value),
+        ))) if value.sign != Some(Sign::Minus) && value.value > 0 => {
+            match value.unit.as_deref().map(str::to_ascii_lowercase).as_deref() {
+                Some("bits") => value.value,
+                Some("bytes") => value.value.checked_mul(8)
+                    .expect("integer storage size exceeds the supported range"),
+                _ => panic!(
+                    "unsupported integer storage size unit for {}: {:?}",
+                    comp.identifier, value.unit
+                ),
+            }
+        }
+        Some(value) => panic!(
+            "unsupported integer storage size for {}: {value:?}", comp.identifier
+        ),
+    };
+    if !matches!(bits, 8 | 16 | 32 | 64) {
+        panic!("unsupported integer storage width for {}: {bits} bits", comp.identifier);
+    }
+    Type::Named(format!("{prefix}{bits}"))
+}
+
+/// Base_Type is normally a one-element classifier list. Keep support for the
+/// equivalent single expression used by older models without inventing an i32 base.
+fn array_base_expression(value: &PropertyValue) -> Option<&PropertyExpression> {
+    match value {
+        PropertyValue::Single(expression) => Some(expression),
+        PropertyValue::List(values) if values.len() == 1 => match &values[0] {
+            PropertyListElement::Value(expression) => Some(expression),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 /// Handle array types
 fn determine_array_type(type_mappings: &HashMap<String, Type>, props: &[Property]) -> Type {
-    let mut base_type = Type::Named("i32".to_string()); // Default base type
+    let mut base_type = None;
     let mut dimensions = Vec::new();
 
     // Look up Base_Type property
@@ -207,21 +293,21 @@ fn determine_array_type(type_mappings: &HashMap<String, Type>, props: &[Property
         if let Property::BasicProperty(bp) = prop {
             // Look up base_type property
             if bp.identifier.name.to_lowercase() == "base_type" {
-                if let PropertyValue::Single(PropertyExpression::ComponentClassifier(
+                if let Some(PropertyExpression::ComponentClassifier(
                     ComponentClassifierTerm {
                         unique_component_classifier_reference: uccr,
                     },
-                )) = &bp.value
+                )) = array_base_expression(&bp.value)
                 {
                     if let UniqueComponentClassifierReference::Type(impl_ref) = uccr {
                         let type_name = impl_ref.implementation_name.type_identifier.clone();
                         // println!("type_mappings:{:?}",type_mappings);
-                        base_type = type_mappings
+                        base_type = Some(type_mappings
                             .get(&type_name.to_lowercase())
                             .cloned()
-                            //.unwrap()
-                            .expect("type_mappings must contain the base type");
-                        //.unwrap_or_else(|| Type::Named(type_name.clone()));
+                            // Rust aliases can refer to later declarations. Preserve
+                            // that classifier instead of guessing its element type.
+                            .unwrap_or_else(|| Type::Named(type_name)));
                     }
                 }
             }
@@ -256,7 +342,7 @@ fn determine_array_type(type_mappings: &HashMap<String, Type>, props: &[Property
     }
 
     // Construct the array type: build nested arrays from inner to outer
-    let mut array_type = base_type;
+    let mut array_type = base_type.expect("unsupported or absent array Base_Type classifier");
     for &dim in dimensions.iter().rev() {
         array_type = Type::Array(Box::new(array_type), dim);
     }
@@ -466,7 +552,9 @@ fn determine_union_type(
         name: comp.identifier.clone(),
         fields,
         generics: vec![],
-        derives: vec!["Debug".to_string(), "Clone".to_string()],
+        // Rust unions have no active-field discriminator, so `Debug` cannot be derived safely.
+        // Deriving `Clone` for a union requires `Copy`, which is valid for union-compatible fields.
+        derives: vec!["Copy".to_string(), "Clone".to_string()],
         docs: vec![format!("// AADL Union: {}", comp.identifier)],
         vis: Visibility::Public,
     }

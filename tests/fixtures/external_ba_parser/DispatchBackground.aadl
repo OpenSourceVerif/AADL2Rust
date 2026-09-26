@@ -1,0 +1,33 @@
+-- Test: Background dispatch metadata.
+-- Acceptance: generate resolved BA and C, then compile both artifacts.
+-- The surrounding single-thread state machine is only the required scaffold.
+package DispatchBackground_Example
+public
+  with Base_Types;
+  with Data_Model;
+
+  data Signed32
+    properties
+      Data_Model::Data_Representation => Integer;
+      Source_Data_Size => 4 Bytes;
+  end Signed32;
+
+  thread Worker
+    features
+      input_value : in event data port Signed32;
+  end Worker;
+
+  thread implementation Worker.impl
+    properties
+      Dispatch_Protocol => Background;
+    annex behavior_specification {**
+      states
+        s_initial : initial state;
+        s_ready : complete state;
+        s_final : final state;
+      transitions
+        initialize : s_initial -[]-> s_ready;
+        receive_event : s_ready -[on dispatch]-> s_final;
+    **};
+  end Worker.impl;
+end DispatchBackground_Example;

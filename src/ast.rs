@@ -1227,6 +1227,8 @@ pub mod aadl_ast_cj {
         pub identifier: String,
         pub direction: PortDirection,
         pub port_type: PortType,
+        /// Feature-local associations, retaining records and units for consumers.
+        pub properties: Vec<Property>,
     }
 
     #[derive(Debug, Clone)]
@@ -1459,8 +1461,20 @@ pub mod aadl_ast_cj {
         //PropertyReference(PropertyTerm),
         ComponentClassifier(ComponentClassifierTerm),
         Reference(ReferenceTerm),
-        //Record(RecordTerm),
+        RecordValue(PropertyRecord),
         //Computed(ComputedTerm),
+    }
+
+    #[derive(Debug, Clone)]
+    pub struct PropertyRecord {
+        /// Keep source order and each field's structured value; never flatten to text.
+        pub fields: Vec<PropertyRecordField>,
+    }
+
+    #[derive(Debug, Clone)]
+    pub struct PropertyRecordField {
+        pub name: String,
+        pub value: PropertyValue,
     }
 
     #[derive(Debug, Clone)]
