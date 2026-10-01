@@ -22,6 +22,7 @@ pub(super) fn context_fields(event_driven: bool) -> Vec<Field> {
         },
     ];
     for (name, ty, explanation) in [
+        ("ba_protocol_driven", "Option<bool>", "The first entry selects manual (false) or protocol (true) dispatch; mixing is rejected before side effects."),
         ("ba_last_poll", "std::time::Duration", "Logical elapsed time is monotonic; initialization completes at zero."),
         ("ba_last_dispatch", "Option<std::time::Duration>", "Timed and Sporadic measure from the previous activation, not completion."),
         ("ba_next_release", "std::time::Duration", "Periodic and Hybrid retain their release grid across event activations."),
@@ -45,6 +46,7 @@ pub(super) fn context_initializers(converter: &AadlConverter, implementation: &C
     let mut initializers = vec![
         "ba_context: crate::ba_glue::GlueContext::default(),".to_string(),
         "ba_initialized: false,".to_string(),
+        "ba_protocol_driven: None,".to_string(),
         "ba_last_poll: std::time::Duration::ZERO,".to_string(),
         "ba_last_dispatch: None,".to_string(),
         format!("ba_next_release: std::time::Duration::from_nanos({}u64),", converter.external_ba_period_nanoseconds(implementation).unwrap_or(0)),
@@ -140,6 +142,8 @@ pub(super) fn lifecycle_impl(converter: &AadlConverter, implementation: &Compone
             name: "trigger_ports".to_string(), ty: Type::Named("&[&str]".to_string()),
         }], String::from(
             "assert!(self.ba_initialized, \"external BA dispatch requires initialization\");\n\
+             assert!(self.ba_protocol_driven != Some(true), \"cannot mix manual dispatch and protocol polling\");\n\
+             self.ba_protocol_driven = Some(false);\n\
              // Explicit lifecycle override retained for behavior-only tests; it does not advance host time.\n\
              self.ba_collect_inputs();\n\
              self.ba_dispatch_collected(trigger_ports);"), true),
@@ -167,7 +171,9 @@ pub(super) fn lifecycle_impl(converter: &AadlConverter, implementation: &Compone
 fn activation_source(protocol: &str, period_ns: Option<u64>) -> String {
     let mut source = String::from(
         "assert!(self.ba_initialized, \"external BA poll requires initialization\");\n\
+         assert!(self.ba_protocol_driven != Some(false), \"cannot mix manual dispatch and protocol polling\");\n\
          assert!(now >= self.ba_last_poll, \"external BA host clock moved backwards\");\n\
+         self.ba_protocol_driven = Some(true);\n\
          self.ba_last_poll = now;\n\
          self.ba_collect_inputs();\n");
     if let Some(period) = period_ns {
@@ -562,6 +568,40 @@ fn ms(value: u64) -> Duration { Duration::from_millis(value) }
         assert!(compilation.status.success(), "{protocol} generated host failed at {}: {}", source_path.display(), String::from_utf8_lossy(&compilation.stderr));
         let execution = std::process::Command::new(&binary_path).output().unwrap();
         assert!(execution.status.success(), "{protocol} generated host clock regression failed: {}", String::from_utf8_lossy(&execution.stderr));
+    }
+
+    #[test]
+    fn generated_host_rejects_mixed_entries_before_transport_or_clock_changes() {
+        for protocol in ["Periodic", "Sporadic", "Aperiodic", "Timed", "Hybrid", "Background"] {
+            run_generated_clock_test(protocol, r#"
+                let (mut host, tick, _, _, answer) = setup();
+                host.ba_initialize();
+                tick.send(7).unwrap();
+                host.ba_dispatch_once(&["tick"]);
+                tick.send(8).unwrap();
+                assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| host.ba_poll_dispatch(ms(100)))).is_err());
+                assert_eq!(host.ba_last_poll, ms(0));
+                assert_eq!(host.ba_last_dispatch, None);
+                assert_eq!(host.ba_context.tick_values, vec![7]);
+                assert_eq!(host.ba_context.dispatches.len(), 1);
+                assert_eq!(answer.try_recv().unwrap(), 1);
+                assert!(answer.try_recv().is_err());
+                host.ba_dispatch_once(&["tick"]);
+                assert_eq!(host.ba_context.tick_values, vec![7, 8]);
+                assert_eq!(host.ba_context.dispatches.len(), 2);
+
+                let (mut host, tick, _, _, _answer) = setup();
+                host.ba_initialize();
+                host.ba_poll_dispatch(ms(0));
+                tick.send(9).unwrap();
+                let before = host.ba_context.dispatches.len();
+                assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| host.ba_dispatch_once(&["tick"]))).is_err());
+                assert_eq!(host.ba_context.dispatches.len(), before);
+                assert!(host.ba_context.tick_values.is_empty());
+                assert!(host.ba_poll_dispatch(ms(10)) || host.ba_background_dispatched);
+                assert_eq!(host.ba_context.tick_values, vec![9]);
+            "#);
+        }
     }
 
     #[test]

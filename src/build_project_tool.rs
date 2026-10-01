@@ -21,6 +21,13 @@ pub fn assemble_external_ba_project(test_case: &TestCase) {
 
 fn assemble_project(test_case: &TestCase, external_ba: bool) {
     let project_root = format!("generate/project/{}", test_case.output_name);
+    assemble_rust_project_at(test_case, &project_root, external_ba, None);
+}
+
+/// Assemble at an explicit caller-selected path. Shared ABI code is included at
+/// its original location so every case compiles the same runtime implementation.
+pub fn assemble_rust_project_at(test_case: &TestCase, project_root: &str,
+    external_ba: bool, glue: Option<&Path>) {
 
     // ---------------- Cargo.toml ----------------
     generate_cargo_toml(&project_root, &test_case.output_name);
@@ -50,6 +57,12 @@ fn assemble_project(test_case: &TestCase, external_ba: bool) {
     // ---------------- build.rs ----------------
     if external_ba {
         generate_external_ba_build(test_case, &project_root);
+        if let Some(glue) = glue {
+            let absolute = fs::canonicalize(glue).expect("Shared glue path must exist");
+            fs::write(Path::new(project_root).join("src/ba_glue.rs"),
+                format!("// Shared ABI bindings remain outside regenerated project files.\ninclude!({:?});\n", absolute))
+                .expect("Failed to reference shared glue");
+        }
     } else if c_files.is_empty() || h_files.is_empty() {
         generate_empty_build_rs(&project_root);
     } else {

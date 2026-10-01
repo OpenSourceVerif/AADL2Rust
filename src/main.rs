@@ -28,14 +28,38 @@ use compiler::build_project_tool::*;
 struct Args {
     #[arg(short, long)]
     input: Option<String>,
+    /// Read this exact AADL file, independently of the legacy AADLSource layout.
+    #[arg(long, conflicts_with = "input", requires = "output_dir")]
+    input_file: Option<std::path::PathBuf>,
+    #[arg(long, requires = "input_file")]
+    output_dir: Option<std::path::PathBuf>,
+    /// Directory containing ba.h and the CompCert objects.
+    #[arg(long, requires = "input_file")]
+    ba_artifacts: Option<std::path::PathBuf>,
+    /// Shared/generated Rust ABI binding file; referenced, not duplicated.
+    #[arg(long, requires = "input_file")]
+    glue: Option<std::path::PathBuf>,
     /// Bind one existing thread implementation to the supplied ba_glue module.
-    #[arg(long, requires = "input")]
+    #[arg(long)]
     external_ba: Option<String>,
 }
 
 fn main() {
     // ================= CLI mode: --input <folder> =================
     let args = Args::parse();
+
+    if let Some(input) = args.input_file.as_deref() {
+        if let Err(error) = generate_explicit_project(input, args.output_dir.as_deref().unwrap(),
+            args.external_ba.as_deref(), args.ba_artifacts.as_deref(), args.glue.as_deref()) {
+            eprintln!("Explicit project generation failed: {error}");
+            std::process::exit(2);
+        }
+        return;
+    }
+    if args.external_ba.is_some() && args.input.is_none() {
+        eprintln!("--external-ba requires --input or --input-file");
+        std::process::exit(2);
+    }
 
     if let Some(input_name) = args.input.as_deref() {
         // Construct a TestCase directly from the command-line input folder
@@ -265,6 +289,56 @@ fn main() {
             );
         }
     }
+}
+
+/// Explicit paths keep generated files inside the caller-selected project.
+/// Existing application environment files live outside this directory.
+fn generate_explicit_project(input: &Path, output: &Path, target: Option<&str>,
+    artifacts: Option<&Path>, glue: Option<&Path>) -> Result<(), String> {
+    let content = fs::read_to_string(input).map_err(|e| e.to_string())?;
+    let pairs = AADLParser::parse(aadlight_parser::Rule::file, &content)
+        .map_err(|e| format!("Parsing failed: {e}"))?;
+    let packages = transform::AADLTransformer::transform_file(pairs.collect());
+    let mut converter = AadlConverter::default();
+    converter.set_available_packages(&packages);
+    if let Some(target) = target {
+        converter.set_external_ba_target(target, &packages)?;
+        if artifacts.is_none() || glue.is_none() {
+            return Err("external BA requires --ba-artifacts and --glue".into());
+        }
+    }
+    // Refuse an unrelated existing directory rather than deleting user files.
+    let marker = output.join(".aadl2rust-generated");
+    if output.exists() && !marker.exists() && fs::read_dir(output).map_err(|e| e.to_string())?.next().is_some() {
+        return Err("output directory is nonempty and is not an AADL2Rust generated project".into());
+    }
+    fs::create_dir_all(output.join("src")).map_err(|e| e.to_string())?;
+    // The manifest records only files owned by this generator, so stale package
+    // modules can be removed without recursively deleting the selected directory.
+    if marker.exists() {
+        for entry in fs::read_to_string(&marker).map_err(|e| e.to_string())?.lines() {
+            if entry.contains('/') || entry.contains('\\') || !entry.ends_with(".rs") {
+                return Err("invalid generated-file manifest".into());
+            }
+            let old = output.join("src").join(entry);
+            if old.is_file() { fs::remove_file(old).map_err(|e| e.to_string())?; }
+        }
+    }
+    let mut generated = Vec::new();
+    for package in &packages {
+        let module = merge_item_defs(converter.convert_package(package));
+        let source = RustCodeGenerator::new().generate_module_code(&module);
+        let filename = format!("{}.rs", package.name.to_string().replace("::", "_").to_lowercase());
+        fs::write(output.join("src").join(&filename), source).map_err(|e| e.to_string())?;
+        generated.push(filename);
+    }
+    let artifact_dir = artifacts.unwrap_or_else(|| input.parent().unwrap_or(Path::new(".")));
+    let case = TestCase { id: 0, name: "explicit input".into(),
+        path: artifact_dir.to_string_lossy().into_owned(), output_name: "ba_case".into() };
+    assemble_rust_project_at(&case, &output.to_string_lossy(), target.is_some(), glue);
+    generated.extend(["common_traits.rs", "posix.rs", "lib.rs", "main.rs", "ba_glue.rs"].map(String::from));
+    fs::write(marker, generated.join("\n")).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 fn process_test_case(test_case: &TestCase, external_ba: Option<&str>) {
