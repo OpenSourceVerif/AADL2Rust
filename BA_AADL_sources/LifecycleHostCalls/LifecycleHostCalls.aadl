@@ -1,0 +1,69 @@
+-- Unit-Lifecycle: periodic-host-calls
+-- The lifecycle target uses one timer activation per host call; event-trigger coverage is retained separately.
+-- Unit-Environment: paired-ports-v1
+-- One owning thread and BA; external test inputs use the original ports.
+-- Unit-Isolation: v1
+-- Unit-Target: initialization is called once and each host dispatch is one BA cycle.
+-- Auxiliary prerequisites are checked separately; a blocked prerequisite is not a target failure.
+-- Test: initialization is called once and each host dispatch is one BA cycle.
+-- Acceptance: a native harness observes 10, 11, then 12 across host calls.
+package LifecycleHostCalls_Example
+public
+  
+  with Base_Types;
+  with Data_Model;
+
+  -- Local BA storage preserves the original signed 32-bit representation.
+  data Signed32
+    properties
+      Data_Model::Data_Representation => Integer;
+      Data_Model::Number_Representation => Signed;
+      Source_Data_Size => 4 Bytes;
+  end Signed32;
+
+  thread Worker
+    features
+      tick : in event data port Base_Types::Integer_32;
+      -- Auxiliary peer ports are never read or written by this BA.
+      unit_peer_tick : out event data port Base_Types::Integer_32;
+  end Worker;
+
+  thread implementation Worker.impl
+    properties
+      Dispatch_Protocol => Periodic;
+      Priority => 1;
+      Period => 10 ms;
+    annex behavior_specification {**
+      variables
+        counter : Signed32;
+      states
+        s_initial : initial state;
+        s_ready : complete state;
+        s_increment : state;
+      transitions
+        s_initial -[]-> s_ready {
+          -- Unit-Setup-BEGIN
+          counter := 0;
+          -- Unit-Setup-END
+ counter := 10 };
+        s_ready -[on dispatch]-> s_increment;
+        s_increment -[]-> s_ready { counter := counter + 1 };
+    **};
+  end Worker.impl;
+
+  -- Shared single-thread Unit deployment with inert, explicitly connected peers.
+  process Light_Test_Process end Light_Test_Process;
+  process implementation Light_Test_Process.impl
+    subcomponents worker : thread Worker.impl;
+    connections
+      pair_tick : port worker.unit_peer_tick -> worker.tick;
+  end Light_Test_Process.impl;
+  processor Light_Test_Cpu
+    end Light_Test_Cpu;
+  system Light_Test_System end Light_Test_System;
+  system implementation Light_Test_System.impl
+    subcomponents application : process Light_Test_Process.impl;
+      cpu : processor Light_Test_Cpu;
+    properties Actual_Processor_Binding => reference(cpu) applies to application;
+  end Light_Test_System.impl;
+end LifecycleHostCalls_Example;

@@ -1,0 +1,87 @@
+-- Unit-Environment: paired-ports-v1
+-- One owning thread and BA; external test inputs use the original ports.
+-- Unit-Isolation: v1
+-- Unit-Target: Usual integer conversion for Signed32 and Unsigned64.
+-- Unit-Lifecycle: single-dispatch
+-- Observe the target after one dispatch; AS5506/3 D.4(9) permits the combined state.
+-- Auxiliary prerequisites are checked separately; a blocked prerequisite is not a target failure.
+-- Test: Usual integer conversion for Signed32 and Unsigned64.
+-- Acceptance: generate resolved BA and C, then compile both artifacts.
+-- The surrounding single-thread state machine is only the required scaffold.
+package PromoteWideUnsigned_Example
+public
+  with Data_Model;
+  
+  with Base_Types;
+
+  -- Auxiliary storage preserves model widths, signs and array shapes.
+  data Signed32
+    properties
+      Data_Model::Data_Representation => Integer;
+      Data_Model::Number_Representation => Signed;
+      Source_Data_Size => 4 Bytes;
+  end Signed32;
+
+  data Unsigned64
+    properties
+      Data_Model::Data_Representation => Integer;
+      Data_Model::Number_Representation => Unsigned;
+      Source_Data_Size => 8 Bytes;
+  end Unsigned64;
+
+  data Signed64
+    properties
+      Data_Model::Data_Representation => Integer;
+      Data_Model::Number_Representation => Signed;
+      Source_Data_Size => 8 Bytes;
+  end Signed64;
+
+  thread Worker
+    features
+      -- Auxiliary peer ports are never read or written by this BA.
+      unit_trigger : in event data port Base_Types::Boolean;
+      unit_probe_out : out event data port Base_Types::Boolean;
+  end Worker;
+
+  thread implementation Worker.impl
+    properties
+      Dispatch_Protocol => Periodic;
+      Priority => 1;
+      Period => 10 ms;
+    annex behavior_specification {**
+      variables
+        left_value : Signed32;
+
+        right_value : Unsigned64;
+
+        destination : Signed64;
+      states
+        s_ready : initial complete final state;
+      transitions
+        s_ready -[on dispatch]-> s_ready {
+          -- Unit-Setup-BEGIN
+          left_value := 7;
+          right_value := 2;
+          destination := 0;
+          -- Unit-Setup-END
+ destination := left_value + right_value };
+        
+    **};
+  end Worker.impl;
+
+  -- Shared single-thread Unit deployment with inert, explicitly connected peers.
+  process Light_Test_Process end Light_Test_Process;
+  process implementation Light_Test_Process.impl
+    subcomponents worker : thread Worker.impl;
+    connections
+      inert_pair : port worker.unit_probe_out -> worker.unit_trigger;
+  end Light_Test_Process.impl;
+  processor Light_Test_Cpu
+    end Light_Test_Cpu;
+  system Light_Test_System end Light_Test_System;
+  system implementation Light_Test_System.impl
+    subcomponents application : process Light_Test_Process.impl;
+      cpu : processor Light_Test_Cpu;
+    properties Actual_Processor_Binding => reference(cpu) applies to application;
+  end Light_Test_System.impl;
+end PromoteWideUnsigned_Example;

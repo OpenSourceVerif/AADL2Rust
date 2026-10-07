@@ -1,0 +1,64 @@
+-- Unit-Environment: paired-ports-v1
+-- One owning thread and BA; external test inputs use the original ports.
+-- Unit-Isolation: v1
+-- Unit-Target: Default integer width and signedness.
+-- Unit-Lifecycle: single-dispatch
+-- Observe the target after one dispatch; AS5506/3 D.4(9) permits the combined state.
+-- Auxiliary prerequisites are checked separately; a blocked prerequisite is not a target failure.
+-- Standard Boolean supplies the dispatch token; the local scalar remains
+-- intentional coverage of this case's type-resolution rule.
+-- Test: Default integer width and signedness.
+-- Acceptance: generate resolved BA and C, then compile both artifacts.
+-- The surrounding single-thread state machine is only the required scaffold.
+package ScalarDefaultInteger_Example
+public
+  
+  with Base_Types;
+  with Data_Model;
+
+  data DefaultInteger
+    properties
+      Data_Model::Data_Representation => Integer;
+  end DefaultInteger;
+
+  thread Worker
+    features
+      -- Auxiliary peer ports are never read or written by this BA.
+      unit_trigger : in event data port Base_Types::Boolean;
+      unit_probe_out : out event data port Base_Types::Boolean;
+  end Worker;
+
+  thread implementation Worker.impl
+    properties
+      Dispatch_Protocol => Periodic;
+      Priority => 1;
+      Period => 10 ms;
+    annex behavior_specification {**
+      variables
+        value : DefaultInteger;
+      states
+        s_ready : initial complete final state;
+      transitions
+        s_ready -[on dispatch]-> s_ready{
+          value := 7
+        };
+        
+    **};
+  end Worker.impl;
+
+  -- Shared single-thread Unit deployment with inert, explicitly connected peers.
+  process Light_Test_Process end Light_Test_Process;
+  process implementation Light_Test_Process.impl
+    subcomponents worker : thread Worker.impl;
+    connections
+      inert_pair : port worker.unit_probe_out -> worker.unit_trigger;
+  end Light_Test_Process.impl;
+  processor Light_Test_Cpu
+    end Light_Test_Cpu;
+  system Light_Test_System end Light_Test_System;
+  system implementation Light_Test_System.impl
+    subcomponents application : process Light_Test_Process.impl;
+      cpu : processor Light_Test_Cpu;
+    properties Actual_Processor_Binding => reference(cpu) applies to application;
+  end Light_Test_System.impl;
+end ScalarDefaultInteger_Example;
