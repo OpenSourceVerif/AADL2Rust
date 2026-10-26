@@ -1,0 +1,96 @@
+-- 案例：5.1-08，独立数据实例的写入隔离。
+-- 规则位置：docs/aadl_semantic_rules/standard_order.tex。
+-- 标准依据：AS5506D 5.1(12)，第 61 页；5.1.1(26)，第 63 页。
+-- 实例化入口：Data_Instance_Isolation::Test_Root.impl。
+-- 观察端口：demo.left_result、demo.right_result。
+--
+-- 模型仅含一个线程实例和一个 BA。left、right 是 AADL data 子组件，
+-- 不是 BA 局部变量；二者采用相同分类器，但必须拥有独立的数据存储。
+-- 每次分派先显式建立 (left, right) = (1, 2)，再只写 left := 7。
+-- 随后的输出应为 left_result = 7、right_result = 2。
+-- 若后端错误地将同类型实例合并为同一存储对象，两项输出会变为 (7, 7)。
+-- 所有赋值与观察都在同一次分派中完成，不依赖缺省初值或跨分派保持。
+package Data_Instance_Isolation
+public
+  with Base_Types;
+
+  thread Isolation_Worker
+  features
+    -- 两个输出仅用于观察各数据实例的值，不增加执行线程。
+    left_result : out event data port Base_Types::Integer;
+    right_result : out event data port Base_Types::Integer;
+  end Isolation_Worker;
+
+  thread implementation Isolation_Worker.impl
+  subcomponents
+    -- 相同类型的两次独立声明，是本案例的被检验对象。
+    left : data Base_Types::Integer;
+    right : data Base_Types::Integer;
+  properties
+    Dispatch_Protocol => Periodic;
+    Period => 10 ms;
+    Deadline => 10 ms;
+  annex behavior_specification {**
+    states
+      ready : initial complete final state;
+    transitions
+      ready -[on dispatch]-> ready {
+        -- 显式初始化两个 AADL 数据实例，避免读取未定义值。
+        left := 1;
+        right := 2;
+        -- 关键动作：只修改 left，right 必须仍为 2。
+        left := 7;
+        -- 发送实际读取值；不能把预期常量 7、2 直接写进输出动作。
+        left_result!(left);
+        right_result!(right)
+      };
+  **};
+  end Isolation_Worker.impl;
+
+  process Isolation_Process
+  features
+    left_result : out event data port Base_Types::Integer;
+    right_result : out event data port Base_Types::Integer;
+  end Isolation_Process;
+
+  process implementation Isolation_Process.impl
+  subcomponents
+    worker : thread Isolation_Worker.impl;
+  connections
+    -- 将唯一线程的两项观察值转发到进程边界。
+    export_left : port worker.left_result -> left_result;
+    export_right : port worker.right_result -> right_result;
+  end Isolation_Process.impl;
+
+  processor Example_CPU
+  end Example_CPU;
+
+  system Demo
+  features
+    -- 环境可在系统边界观察每次分派的输出对 (7, 2)。
+    left_result : out event data port Base_Types::Integer;
+    right_result : out event data port Base_Types::Integer;
+  end Demo;
+
+  system implementation Demo.impl
+  subcomponents
+    application : process Isolation_Process.impl;
+    cpu : processor Example_CPU;
+  connections
+    export_left : port application.left_result -> left_result;
+    export_right : port application.right_result -> right_result;
+  properties
+    -- 给出唯一线程的执行平台；进程中的线程继承此绑定。
+    Actual_Processor_Binding => (reference(cpu)) applies to application;
+  end Demo.impl;
+
+  -- 无特征的测试根系统便于工具实例化；此包装不增加线程或 BA。
+  -- 两项结果保留在 demo 的输出端口，由测试环境观察。
+  system Test_Root
+  end Test_Root;
+
+  system implementation Test_Root.impl
+  subcomponents
+    demo : system Demo.impl;
+  end Test_Root.impl;
+end Data_Instance_Isolation;
